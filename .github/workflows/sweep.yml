@@ -1,0 +1,54 @@
+name: Des Website Sweep
+
+on:
+  schedule:
+    - cron: "0 0 * * *"            # daily 08:00 SGT — critical sweep
+    - cron: "0 22 * * 0"           # Mon 06:00 SGT — weekly critical+high
+    - cron: "0 15 1,15 * *"        # 1st + 15th 23:00 SGT — bi-weekly deep
+  workflow_dispatch:
+    inputs:
+      site:
+        description: "Site (trw / aura)"
+        required: true
+        default: "trw"
+      tier:
+        description: "Tier (critical / weekly / deep)"
+        required: true
+        default: "critical"
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Pick tier from cron
+        id: tier
+        run: |
+          case "${{ github.event.schedule }}" in
+            "0 0 * * *")     echo "tier=critical" >> $GITHUB_OUTPUT ;;
+            "0 22 * * 0")    echo "tier=weekly"   >> $GITHUB_OUTPUT ;;
+            "0 15 1,15 * *") echo "tier=deep"     >> $GITHUB_OUTPUT ;;
+            *)               echo "tier=${{ github.event.inputs.tier }}" >> $GITHUB_OUTPUT ;;
+          esac
+
+      - name: Pick site
+        id: site
+        run: echo "site=${{ github.event.inputs.site || 'trw' }}" >> $GITHUB_OUTPUT
+
+      - name: Run Des sweep
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DES_DB_ID: ${{ secrets.NOTION_DES_DB_ID }}
+        run: python -m src.run --site=${{ steps.site.outputs.site }} --tier=${{ steps.tier.outputs.tier }}

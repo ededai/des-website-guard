@@ -1,0 +1,7 @@
+playwright>=1.49
+requests>=2.32
+pyyaml>=6.0
+beautifulsoup4>=4.12
+notion-client>=2.2
+python-dotenv>=1.0
+Pillow>=10.4

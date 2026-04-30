@@ -1,0 +1,34 @@
+name: TRW
+url: https://therightworkshop.com
+sitemap: https://therightworkshop.com/wp-sitemap.xml
+in_charge: Bryan
+backup_in_charge: Codi
+canonical_chrome_baseline: https://therightworkshop.com/
+
+required_markers:
+  service_pages:
+    - NAV-WHITE-PATCH-2026-04-29
+    - MOBILE-NAV-FIX-2026-04-25
+
+required_byline: "Reviewed by The Right Workshop team"
+
+required_address_unit: "#02-61"
+
+skip_paths:
+  - /wp-admin/
+  - /wp-login.php
+  - /xmlrpc.php
+  - /feed/
+  - /comments/feed/
+  - /?p=
+  - /author/
+  - /attachment/
+
+photon_required_paths:
+  - /
+  - /services/
+
+# Pages that legitimately differ from canonical chrome (no header/footer expected)
+chrome_exempt_paths:
+  - /privacy-policy/
+  - /terms/

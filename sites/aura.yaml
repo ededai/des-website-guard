@@ -1,0 +1,15 @@
+name: AURA
+url: TBD
+sitemap: TBD
+in_charge: Codi
+backup_in_charge: Codi
+canonical_chrome_baseline: TBD
+
+# AURA rebuild begins ~2026-05-06. This config is a placeholder.
+# Codi populates URL, sitemap, baseline, and in-charge once the new site is up.
+
+skip_paths:
+  - /wp-admin/
+  - /wp-login.php
+
+active: false   # set to true after AURA rebuild lands

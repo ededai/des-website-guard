@@ -94,7 +94,8 @@ def check_alt_text(html):
     soup = BeautifulSoup(html, "html.parser")
     missing = [img for img in soup.find_all("img") if not img.get("alt") and not img.get("aria-hidden") == "true"]
     if missing:
-        return {"check": "missing_alt", "severity": "medium", "evidence": f"{len(missing)} <img> without alt"}
+        srcs = [img.get("src", "?")[:80] for img in missing[:5]]
+        return {"check": "missing_alt", "severity": "medium", "evidence": f"{len(missing)} <img> without alt. Srcs: {srcs}"}
     return None
 
 

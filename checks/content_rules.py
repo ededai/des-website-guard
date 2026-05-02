@@ -92,7 +92,23 @@ def check_h1(html):
 
 def check_alt_text(html):
     soup = BeautifulSoup(html, "html.parser")
-    missing = [img for img in soup.find_all("img") if not img.get("alt") and not img.get("aria-hidden") == "true"]
+    missing = []
+    for img in soup.find_all("img"):
+        if img.get("alt") is not None and img.get("alt") != "":
+            continue
+        if img.get("aria-hidden") == "true":
+            continue
+        # Skip Jetpack tracking pixel (pixel.wp.com/g.gif, id="wpstats").
+        # alt="" is correct for decorative trackers.
+        if img.get("id") == "wpstats":
+            continue
+        src = (img.get("src") or "")
+        if "pixel.wp.com" in src or "stats.wp.com" in src:
+            continue
+        # alt="" is technically valid for decorative imgs, only flag truly missing
+        if img.get("alt") == "":
+            continue
+        missing.append(img)
     if missing:
         srcs = [img.get("src", "?")[:80] for img in missing[:5]]
         return {"check": "missing_alt", "severity": "medium", "evidence": f"{len(missing)} <img> without alt. Srcs: {srcs}"}

@@ -38,10 +38,27 @@ async def check_maroon_leak(page):
 
 
 async def check_broken_images(page):
+    # Trigger lazy-load: scroll the page top-to-bottom in chunks so
+    # IntersectionObserver / loading="lazy" images start fetching, then wait
+    # for the network to settle before deciding what is actually broken.
+    await page.evaluate("""async () => {
+        const step = Math.max(window.innerHeight, 600);
+        for (let y = 0; y <= document.body.scrollHeight; y += step) {
+            window.scrollTo(0, y);
+            await new Promise(r => setTimeout(r, 120));
+        }
+        window.scrollTo(0, 0);
+    }""")
+    try:
+        await page.wait_for_load_state("networkidle", timeout=8000)
+    except Exception:
+        pass
     broken = await page.evaluate("""() => {
         const out = [];
         for (const img of document.images) {
-            if (!img.complete || img.naturalWidth === 0) {
+            // Only flag images the browser actually attempted to load and failed.
+            // complete=true + naturalWidth=0 = real failure (404, decode error).
+            if (img.complete && img.naturalWidth === 0 && img.src) {
                 out.push({ src: img.src, alt: img.alt });
             }
         }

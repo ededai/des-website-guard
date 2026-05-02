@@ -75,6 +75,75 @@ async def check_console_errors(page, captured_errors):
     return None
 
 
+async def check_mobile_menu(page):
+    """Mobile-only check. Tap the hamburger and confirm:
+      - drawer becomes visible (display != none, white-ish bg, .open class)
+      - tapping any link inside auto-closes the drawer (universal rule)
+      - no maroon/black-on-black colour leak on links
+
+    Logged in two TRW post-mortems:
+      - 2026-05-02 — 9 service pages had broken IIFE onclick referencing
+        the old `trwMobileNav` id. Hamburger tap did nothing.
+      - 2026-05-02 — /brands-we-service/ drawer had no id, the older
+        `getElementById('mobileNav')` lookup returned null. Hamburger ran but
+        toggled nothing visible.
+    """
+    bad = await page.evaluate("""async () => {
+        const isMaroonish = (rgb) => {
+            const m = rgb.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+            if (!m) return false;
+            const [r,g,b] = [+m[1], +m[2], +m[3]];
+            if (Math.abs(r-239)<8 && Math.abs(g-89)<8 && Math.abs(b-39)<8) return false;
+            if (Math.abs(r-217)<8 && Math.abs(g-78)<8 && Math.abs(b-32)<8) return false;
+            return r >= 100 && g < 60 && b < 60 && r > g+30 && r > b+30;
+        };
+        const btn = document.getElementById('navHamburger')
+                 || document.getElementById('trwNavHamburger')
+                 || document.querySelector('.nav-hamburger');
+        if (!btn) return { issue: 'no_hamburger' };
+        // Capture pre-click state
+        const nav = document.getElementById('mobileNav') || document.querySelector('.mobile-nav');
+        if (!nav) return { issue: 'no_drawer' };
+        btn.click();
+        await new Promise(r => setTimeout(r, 120));
+        const cs = getComputedStyle(nav);
+        const opened = nav.classList.contains('open') && cs.display !== 'none';
+        if (!opened) return { issue: 'menu_did_not_open', display: cs.display };
+        // Drawer should have a visible bg (not transparent)
+        const bgM = cs.backgroundColor.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([\\d.]+))?/);
+        if (bgM) {
+            const a = bgM[4] === undefined ? 1 : +bgM[4];
+            const lightish = +bgM[1] >= 200 && +bgM[2] >= 200 && +bgM[3] >= 200;
+            if (a < 0.5 || (!lightish && a >= 0.5)) {
+                return { issue: 'drawer_invisible', bg: cs.backgroundColor };
+            }
+        }
+        const maroon = [];
+        for (const a of nav.querySelectorAll('a')) {
+            const c = getComputedStyle(a);
+            if (isMaroonish(c.color)) maroon.push({ state: 'normal', color: c.color, txt: a.textContent.trim().slice(0,30) });
+            try { a.focus(); const c2 = getComputedStyle(a); if (isMaroonish(c2.color)) maroon.push({ state: 'focus', color: c2.color, txt: a.textContent.trim().slice(0,30) }); a.blur(); } catch(_) {}
+        }
+        // Auto-close on link tap (intercept navigation)
+        const link = nav.querySelector('a[href]');
+        let closedAfterTap = null;
+        if (link) {
+            const orig = link.getAttribute('href');
+            link.setAttribute('href', 'javascript:void(0)');
+            link.click();
+            closedAfterTap = !nav.classList.contains('open');
+            link.setAttribute('href', orig);
+        }
+        if (!closedAfterTap) return { issue: 'menu_no_autoclose' };
+        if (maroon.length) return { issue: 'menu_maroon_leak', samples: maroon.slice(0, 3) };
+        return null;
+    }""")
+    if bad:
+        sev = "critical" if bad.get("issue") in ("menu_did_not_open", "no_hamburger", "no_drawer") else "high"
+        return {"check": "mobile_menu", "severity": sev, "evidence": bad}
+    return None
+
+
 async def check_buttons_clickable(page):
     """Light-touch — make sure each button has a meaningful destination
     (anchor href or onclick or data-action). Skip actually triggering

@@ -80,7 +80,11 @@ async def render_and_check(playwright, url, site, viewports):
                     findings.append(f)
 
             # visual / functional checks
-            for fn in [visual.check_chrome_consistency, visual.check_maroon_leak, visual.check_broken_images, visual.check_buttons_clickable]:
+            checks = [visual.check_chrome_consistency, visual.check_maroon_leak, visual.check_broken_images, visual.check_buttons_clickable]
+            # Mobile-only: hamburger menu functional check (logged in 2026-05-02 post-mortem)
+            if vp_name in ("phone_ios", "phone_and"):
+                checks.append(visual.check_mobile_menu)
+            for fn in checks:
                 try:
                     if fn is visual.check_chrome_consistency:
                         f = await fn(page, None, None)

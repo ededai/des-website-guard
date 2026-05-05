@@ -16,6 +16,10 @@ async def check_chrome_consistency(page, baseline_header_html, baseline_footer_h
         return {"check": "missing_nav", "severity": "critical", "evidence": "no <nav> on page"}
     if not footer:
         return {"check": "missing_footer", "severity": "critical", "evidence": "no <footer> on page"}
+    # COE link must appear in nav
+    coe_in_nav = await page.query_selector("nav.nav a[href*='coe-results'], .trw-injected-nav a[href*='coe-results'], .nav-links a[href*='coe-results']")
+    if not coe_in_nav:
+        return {"check": "missing_coe_nav_link", "severity": "high", "evidence": "COE link not found in nav — expected between Blog and Contact"}
     return None
 
 

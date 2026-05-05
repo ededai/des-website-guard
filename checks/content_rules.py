@@ -115,10 +115,53 @@ def check_alt_text(html):
     return None
 
 
+# Canonical footer fingerprints — classes/markers only in the TRW canonical footer.
+# Update these if the canonical footer is intentionally redesigned.
+CANONICAL_FOOTER_FINGERPRINTS = [
+    "footer-social-btn",    # custom class on social icon buttons
+    "footer-brand-logo",    # custom class on footer logo img
+    "footer-nav-col",       # custom class on footer nav columns
+    "footer-brand-tag",     # custom class on footer brand tagline
+]
+
+# Pages that legitimately have no breadcrumb (top-level hubs / homepage)
+BC_EXEMPT_SLUGS = {"/", "/services/", "/topics/", "/brands/"}
+
+
+def check_footer_drift(html, url=""):
+    """HIGH — page footer doesn't contain the canonical footer fingerprints."""
+    missing = [fp for fp in CANONICAL_FOOTER_FINGERPRINTS if fp not in html]
+    if missing:
+        return {
+            "check": "footer_drift",
+            "severity": "high",
+            "evidence": f"footer missing canonical markers: {', '.join(missing)}",
+        }
+    return None
+
+
+def check_breadcrumb(html, url=""):
+    """MEDIUM — page is missing a breadcrumb nav (class='bc')."""
+    # Skip exempt top-level pages
+    from urllib.parse import urlparse
+    path = urlparse(url).path.rstrip("/") + "/"
+    if path in BC_EXEMPT_SLUGS or path == "/":
+        return None
+    if 'class="bc"' not in html and "class='bc'" not in html:
+        return {
+            "check": "missing_breadcrumb",
+            "severity": "medium",
+            "evidence": "no <nav class=\"bc\"> breadcrumb found on page",
+        }
+    return None
+
+
 ALL_HTML_CHECKS = [
     check_em_dash,
     check_byline,
     check_address_unit,
+    check_footer_drift,
+    check_breadcrumb,
     check_meta_description,
     check_title,
     check_canonical,

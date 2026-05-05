@@ -10,6 +10,18 @@ required_markers:
     - NAV-WHITE-PATCH-2026-04-29
     - MOBILE-NAV-FIX-2026-04-25
 
+# Canonical footer fingerprints — must appear on every published page.
+# Source of truth: homepage (WP ID 90). Locked 2026-05-05.
+canonical_footer_fingerprints:
+  - footer-social-btn
+  - footer-brand-logo
+  - footer-nav-col
+  - footer-brand-tag
+
+# Nav integrity — COE link must be present between Blog and Contact on every page.
+required_nav_links:
+  - /coe-results/
+
 required_byline: "Reviewed by The Right Workshop team"
 
 required_address_unit: "#02-61"

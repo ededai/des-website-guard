@@ -120,8 +120,9 @@ def check_alt_text(html):
 CANONICAL_FOOTER_FINGERPRINTS = [
     "footer-social-btn",    # custom class on social icon buttons
     "footer-brand-logo",    # custom class on footer logo img
-    "footer-nav-col",       # custom class on footer nav columns
+    "footer-col-title",     # was footer-nav-col (stale); the canonical footer uses footer-col-title for multi-column headings
     "footer-brand-tag",     # custom class on footer brand tagline
+    "footer-grid",          # canonical multi-column wrapper
 ]
 
 # Pages that legitimately have no breadcrumb (top-level hubs / homepage)

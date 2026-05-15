@@ -1,3 +1,12 @@
+"""
+Telegram reporter. Single shared TRW bot/chat. Messages prefixed with [DES].
+
+Severity routing (configured in src/run.py):
+- critical: immediate
+- high:     immediate (queued to 08:00 SGT business hours in production)
+- medium:   batched into end-of-sweep digest (one message per sweep run)
+- low:      batched into bi-weekly digest (only on the deep-sweep tier)
+"""
 import os
 
 import requests
@@ -20,7 +29,6 @@ def format_critical(finding):
         f"Site: {finding['site']} | Severity: critical | Affected: {len(finding['urls'])} pages\n"
         f"{finding['summary']}\n"
         + "Top URLs:\n" + "\n".join("- " + u for u in finding["urls"][:3]) + "\n"
-        + (f"Notion: {finding['notion_url']}\n" if finding.get("notion_url") else "")
         + f"In-charge: {finding['in_charge']}"
     )
 
@@ -30,7 +38,21 @@ def format_high(finding):
         f"[DES] HIGH — {finding['title']}\n"
         f"Site: {finding['site']} | Severity: high | Affected: {len(finding['urls'])} pages\n"
         f"{finding['summary']}\n"
-        + (f"Notion: {finding['notion_url']}\n" if finding.get("notion_url") else "")
         + f"In-charge: {finding['in_charge']}\n"
         + f"Codi reroutes to {finding['in_charge']} now."
     )
+
+
+def format_digest(findings, severity_label, site, period_label):
+    """Batched digest for medium/low — one Telegram message listing all findings."""
+    if not findings:
+        return None
+    header = f"[DES] {severity_label.upper()} DIGEST — {site} ({period_label})\n{len(findings)} finding(s)\n"
+    lines = []
+    for f in findings:
+        lines.append(
+            f"\n• {f['title']} ({len(f['urls'])} URL{'s' if len(f['urls']) != 1 else ''})"
+            f"\n  {f['summary'][:140]}"
+            f"\n  In-charge: {f['in_charge']}"
+        )
+    return header + "".join(lines)

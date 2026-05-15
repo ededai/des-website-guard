@@ -1,6 +1,12 @@
 """
 Entrypoint. Crawl a site's sitemap, render every URL across viewports,
-run the check battery, de-dupe findings, route by severity, log to Notion + Telegram.
+run the check battery, de-dupe findings, route by severity, log to bug_log + Telegram.
+
+Severity routing:
+  critical: immediate Telegram + bug log
+  high:     immediate Telegram + bug log
+  medium:   bug log + end-of-sweep Telegram digest
+  low:      bug log + bi-weekly Telegram digest (deep tier only)
 
 Usage:
   python -m src.run --site=trw --tier=critical [--dry-run]
@@ -23,7 +29,7 @@ sys.path.insert(0, str(ROOT))
 from src.devices import DEVICES
 from src.sitemap import discover_urls, filter_skip
 from checks import content_rules, visual
-from reporters import telegram, notion
+from reporters import telegram, bug_log
 
 
 def load_site(name):
@@ -134,11 +140,10 @@ def dedupe(all_findings, site_name, in_charge):
 
 
 def route(finding, dry_run=False):
+    """Immediate routing for critical/high. Medium/low collected for digest."""
     sev = finding["severity"]
-    notion_url = None
     if not dry_run:
-        notion_url = notion.log_finding(finding)
-    finding["notion_url"] = notion_url
+        bug_log.log_finding(finding)
     if dry_run:
         print(f"[DRY-RUN] {sev.upper()} — {finding['title']} ({len(finding['urls'])} URLs)")
         return
@@ -147,7 +152,27 @@ def route(finding, dry_run=False):
     elif sev == "high":
         # in production this is gated to 08:00 SGT business hours; here always send
         telegram.send(telegram.format_high(finding))
-    # medium / low: notion only
+    # medium / low handled in send_digests() after the sweep finishes
+
+
+def send_digests(findings, site_name, tier, dry_run=False):
+    """Emit batched Telegram digests for medium and low after the sweep finishes."""
+    medium = [f for f in findings if f["severity"] == "medium"]
+    low = [f for f in findings if f["severity"] == "low"]
+    period = {"critical": "daily", "weekly": "weekly", "deep": "bi-weekly"}.get(tier, tier)
+    if medium:
+        msg = telegram.format_digest(medium, "medium", site_name, period)
+        if dry_run:
+            print(f"[DRY-RUN] MEDIUM DIGEST — {len(medium)} findings\n{msg}")
+        else:
+            telegram.send(msg)
+    # low only goes out on the deep tier (bi-weekly), so noise stays low
+    if low and tier == "deep":
+        msg = telegram.format_digest(low, "low", site_name, "bi-weekly")
+        if dry_run:
+            print(f"[DRY-RUN] LOW DIGEST — {len(low)} findings\n{msg}")
+        else:
+            telegram.send(msg)
 
 
 async def main():
@@ -189,6 +214,7 @@ async def main():
     print(f"DES: {len(findings)} unique findings")
     for f in findings:
         route(f, dry_run=args.dry_run)
+    send_digests(findings, site["name"], args.tier, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

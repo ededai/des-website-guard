@@ -49,6 +49,14 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-          NOTION_DES_DB_ID: ${{ secrets.NOTION_DES_DB_ID }}
         run: python -m src.run --site=${{ steps.site.outputs.site }} --tier=${{ steps.tier.outputs.tier }}
+
+      - name: Commit updated bug log
+        run: |
+          git config user.name "des-bot"
+          git config user.email "des-bot@users.noreply.github.com"
+          if [ -f bug-log.jsonl ] && ! git diff --quiet bug-log.jsonl 2>/dev/null; then
+            git add bug-log.jsonl
+            git commit -m "des: update bug log [skip ci]"
+            git push
+          fi

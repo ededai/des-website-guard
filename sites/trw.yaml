@@ -53,6 +53,20 @@ byline_exempt_paths:
   - /news/
   - /coe-results/
 
+# Hub and section pages checked first in every sweep — articles follow
+priority_paths:
+  - /
+  - /blog/
+  - /services/
+  - /topics/
+  - /coe-results/
+  - /car-tips/
+  - /news/
+  - /guides/
+  - /brands/
+  - /contact/
+  - /about/
+
 photon_required_paths:
   - /
   - /services/

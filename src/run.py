@@ -203,8 +203,20 @@ async def main():
 
     urls = discover_urls(site["sitemap"])
     urls = filter_skip(urls, site.get("skip_paths", []))
-    if args.tier == "critical":
-        urls = urls[:20]
+
+    # Priority-first: hub + section pages always checked before individual articles
+    priority_prefixes = [p.rstrip("/") for p in (site.get("priority_paths") or [])]
+    if priority_prefixes:
+        site_base = site["url"].rstrip("/")
+        priority_urls, rest_urls = [], []
+        for u in urls:
+            path = u.replace(site_base, "").rstrip("/") or "/"
+            if any(path == p or path.startswith(p + "/") for p in priority_prefixes):
+                priority_urls.append(u)
+            else:
+                rest_urls.append(u)
+        urls = priority_urls + rest_urls
+
     if args.limit:
         urls = urls[: args.limit]
 

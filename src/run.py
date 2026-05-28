@@ -70,7 +70,17 @@ async def render_and_check(playwright, url, site, viewports):
             findings = []
 
             # html-level checks
+            from urllib.parse import urlparse
+            url_path = urlparse(url).path.rstrip("/") + "/"
+            byline_exempt = [
+                p.rstrip("/") + "/" for p in (site.get("byline_exempt_paths") or [])
+            ]
             for fn in content_rules.ALL_HTML_CHECKS:
+                # Skip byline check on hub, utility, and contact pages
+                if fn is content_rules.check_byline and any(
+                    url_path.startswith(p) for p in byline_exempt
+                ):
+                    continue
                 f = fn(html)
                 if f:
                     f["url"] = url

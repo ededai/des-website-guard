@@ -36,6 +36,23 @@ skip_paths:
   - /author/
   - /attachment/
 
+# Pages that don't carry the reviewer byline — hub, utility, and contact pages
+byline_exempt_paths:
+  - /contact/
+  - /about/
+  - /team/
+  - /faq/
+  - /privacy-policy/
+  - /terms/
+  - /blog/
+  - /topics/
+  - /services/
+  - /brands/
+  - /guides/
+  - /car-tips/
+  - /news/
+  - /coe-results/
+
 photon_required_paths:
   - /
   - /services/

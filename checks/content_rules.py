@@ -10,8 +10,12 @@ EM_DASH_RE = re.compile(r"[\u2014\u2013]|--")  # em + en + double-dash
 
 
 def visible_text(html):
+    # Strip standard + bogus HTML comments (wptexturize can mangle --> causing leakage)
+    html = re.sub(r"<!--[\s\S]*?-->", "", html)
+    html = re.sub(r"<!-[^-][\s\S]*?-->", "", html)
     soup = BeautifulSoup(html, "html.parser")
-    for tag in soup(["script", "style", "noscript"]):
+    # Strip non-visible head content (title, meta) and script/style
+    for tag in soup(["head", "script", "style", "noscript"]):
         tag.decompose()
     return soup.get_text(separator=" ")
 

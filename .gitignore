@@ -6,3 +6,4 @@ venv/
 baselines/*/screenshots/
 .DS_Store
 *.log
+.gstack/

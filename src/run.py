@@ -155,7 +155,8 @@ def route(finding, dry_run=False):
     if not dry_run:
         bug_log.log_finding(finding)
     if dry_run:
-        print(f"[DRY-RUN] {sev.upper()} — {finding['title']} ({len(finding['urls'])} URLs)")
+        urls_preview = "\n  ".join(finding["urls"][:20])
+        print(f"[DRY-RUN] {sev.upper()} — {finding['title']} ({len(finding['urls'])} URLs)\n  {urls_preview}\n  evidence: {finding.get('evidence','')[:120]}")
         return
     if sev == "critical":
         telegram.send(telegram.format_critical(finding))

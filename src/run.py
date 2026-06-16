@@ -54,8 +54,17 @@ async def render_and_check(playwright, url, site, viewports):
             page.on("console", lambda msg: captured_errors.append(f"[{msg.type}] {msg.text}") if msg.type == "error" else None)
 
             try:
-                resp = await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                # Use "commit" + DOMContentLoaded fallback so slow third-party
+                # CSS bundles (Jetpack Boost, gtag, stats.wp.com) don't make
+                # the sweep timeout on otherwise-healthy pages.
+                resp = await page.goto(url, wait_until="commit", timeout=30000)
                 status = resp.status if resp else None
+                try:
+                    await page.wait_for_load_state("domcontentloaded", timeout=20000)
+                except Exception:
+                    pass
+                # Give inline scripts a moment to execute so pageerror handlers fire
+                await page.wait_for_timeout(2000)
             except Exception as e:
                 findings_per_viewport.setdefault(vp_name, []).append({"url": url, "viewport": vp_name, "check": "load_failed", "severity": "critical", "evidence": str(e)})
                 await ctx.close()
@@ -149,6 +158,31 @@ def dedupe(all_findings, site_name, in_charge):
     return list(grouped.values())
 
 
+def is_waived(finding, waivers):
+    """Return the matching waiver dict (or None). A finding is waived when its check_id matches
+    and every provided condition matches. This is Des's learning loop: a confirmed false positive
+    is suppressed declaratively in sites/<site>.yaml, so it never re-alerts — no code edit needed.
+
+    Waiver fields (all optional except `check`):
+      check:          check_id to match (required)
+      url_contains:   only waive if at least one affected URL contains this substring
+      evidence_regex: only waive if the finding evidence matches this regex
+      reason:         human note (shown in the waived-findings log)
+    """
+    import re as _re
+    for w in waivers or []:
+        if w.get("check") != finding.get("check_id"):
+            continue
+        uc = w.get("url_contains")
+        if uc and not any(uc in u for u in finding.get("urls", [])):
+            continue
+        er = w.get("evidence_regex")
+        if er and not _re.search(er, finding.get("evidence", "")):
+            continue
+        return w
+    return None
+
+
 def route(finding, dry_run=False):
     """Immediate routing for critical/high. Medium/low collected for digest."""
     sev = finding["severity"]
@@ -234,6 +268,20 @@ async def main():
 
     findings = dedupe(all_findings, site["name"], site["in_charge"])
     findings.sort(key=lambda f: {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(f["severity"], 9))
+
+    # Learning loop: drop findings that match a waiver in sites/<site>.yaml (confirmed false
+    # positives / known-noise). Waived findings are printed for audit but never alerted.
+    waivers = site.get("waivers", [])
+    active, waived = [], []
+    for f in findings:
+        w = is_waived(f, waivers)
+        (waived if w else active).append((f, w))
+    if waived:
+        print(f"DES: {len(waived)} finding(s) waived (see sites/{args.site}.yaml waivers):")
+        for f, w in waived:
+            print(f"  WAIVED {f['severity'].upper()} — {f['title']} ({len(f['urls'])} URLs) — {w.get('reason','(no reason)')}")
+    findings = [f for f, _ in active]
+
     print(f"DES: {len(findings)} unique findings")
     for f in findings:
         route(f, dry_run=args.dry_run)

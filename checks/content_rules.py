@@ -8,8 +8,14 @@ from bs4 import BeautifulSoup
 
 EM_DASH_RE = re.compile(r"[\u2014\u2013]|--")  # em + en + double-dash
 
+# Elements whose visible text is a JS-injected placeholder that Des must NOT scan.
+# These hold "\u2014" / "\u2014\u2014" only until client-side JS replaces them with real values, so a
+# raw-HTML scan would false-positive on the em-dash. Add a data-attribute here to teach
+# Des to ignore a new placeholder. (Learned 2026-06-16: COE chart range/date/count cells.)
+EM_DASH_IGNORE_SELECTORS = ["[data-range-text]", "[data-date-pill]", "[data-round-count]"]
 
-def visible_text(html):
+
+def visible_text(html, ignore_selectors=None):
     # Strip standard + bogus HTML comments (wptexturize can mangle --> causing leakage)
     html = re.sub(r"<!--[\s\S]*?-->", "", html)
     html = re.sub(r"<!-[^-][\s\S]*?-->", "", html)
@@ -17,6 +23,10 @@ def visible_text(html):
     # Strip non-visible head content (title, meta) and script/style
     for tag in soup(["head", "script", "style", "noscript"]):
         tag.decompose()
+    # Strip JS-placeholder elements (their \u2014 is replaced at runtime; not a real em-dash)
+    for sel in (ignore_selectors if ignore_selectors is not None else EM_DASH_IGNORE_SELECTORS):
+        for el in soup.select(sel):
+            el.decompose()
     return soup.get_text(separator=" ")
 
 

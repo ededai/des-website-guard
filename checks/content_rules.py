@@ -48,15 +48,36 @@ def check_em_dash(html):
 
 
 def check_byline(html, expected="Reviewed by The Right Workshop team"):
-    if expected not in html:
+    # expected=None means the site has no required byline (e.g. AURA) — skip.
+    if expected and expected not in html:
         return {"check": "missing_byline", "severity": "medium", "evidence": f"required byline {expected!r} not found"}
     return None
 
 
-def check_address_unit(html, unit="#02-61"):
-    # only flag if an address is present at all
-    if "Kaki Bukit" in html and unit not in html:
+def check_address_unit(html, unit="#02-61", address_marker="Kaki Bukit"):
+    # only flag if an address is present at all; marker=None disables the check
+    if address_marker and unit and address_marker in html and unit not in html:
         return {"check": "missing_unit_number", "severity": "medium", "evidence": f"address present but unit {unit!r} missing"}
+    return None
+
+
+# wpautop injection signatures (see feedback_wp90_autop_fix_rule). The strong
+# signatures below reliably indicate wpautop ran over raw HTML. The weaker
+# `</p></div></section>` pattern from the skill is deliberately excluded: it
+# matches legitimately structured pages (verified 2026-07-03, 50 false hits on
+# TRW + 11 on AURA with zero visible damage).
+AUTOP_SIGNATURES = [
+    ("p_wrapped_script", re.compile(r"<p><script")),
+    ("p_wrapped_comment", re.compile(r"<p><!--")),
+    ("card_anchor_closed_by_p", re.compile(r'<a class="[a-z-]*-card"[^>]*></p>')),
+    ("p_closing_anchor", re.compile(r"<p>\s*</a>")),
+]
+
+
+def check_autop(html):
+    hits = [name for name, rx in AUTOP_SIGNATURES if rx.search(html)]
+    if hits:
+        return {"check": "autop_injection", "severity": "high", "evidence": f"wpautop signatures present: {', '.join(hits)} — wrap raw HTML in wp:html blocks"}
     return None
 
 
@@ -143,9 +164,12 @@ CANONICAL_FOOTER_FINGERPRINTS = [
 BC_EXEMPT_SLUGS = {"/", "/services/", "/topics/", "/brands/"}
 
 
-def check_footer_drift(html, url=""):
-    """HIGH — page footer doesn't contain the canonical footer fingerprints."""
-    missing = [fp for fp in CANONICAL_FOOTER_FINGERPRINTS if fp not in html]
+def check_footer_drift(html, url="", fingerprints=None):
+    """HIGH — page footer doesn't contain the canonical footer fingerprints.
+    fingerprints=None falls back to the TRW defaults; [] disables the check
+    (used for sites whose canonical footer isn't locked yet, e.g. AURA)."""
+    fps = CANONICAL_FOOTER_FINGERPRINTS if fingerprints is None else fingerprints
+    missing = [fp for fp in fps if fp not in html]
     if missing:
         return {
             "check": "footer_drift",
@@ -155,28 +179,28 @@ def check_footer_drift(html, url=""):
     return None
 
 
-def check_breadcrumb(html, url=""):
-    """MEDIUM — page is missing a breadcrumb nav (class='bc')."""
-    # Skip exempt top-level pages
+def check_breadcrumb(html, url="", exempt_slugs=None):
+    """MEDIUM — page is missing a breadcrumb nav (class='bc').
+    NOTE: callers MUST pass url, or every page looks like the exempt homepage."""
     from urllib.parse import urlparse
     path = urlparse(url).path.rstrip("/") + "/"
-    if path in BC_EXEMPT_SLUGS or path == "/":
+    if path in (exempt_slugs or BC_EXEMPT_SLUGS) or path == "/":
         return None
-    if 'class="bc"' not in html and "class='bc'" not in html:
+    if 'class="bc"' not in html and "class='bc'" not in html and 'breadcrumb' not in html:
         return {
             "check": "missing_breadcrumb",
             "severity": "medium",
-            "evidence": "no <nav class=\"bc\"> breadcrumb found on page",
+            "evidence": "no breadcrumb nav found on page",
         }
     return None
 
 
+# Site-agnostic checks that only need html. Site-aware checks (byline, address,
+# footer fingerprints, breadcrumb) are called explicitly in src/run.py with
+# values from sites/<site>.yaml.
 ALL_HTML_CHECKS = [
     check_em_dash,
-    check_byline,
-    check_address_unit,
-    check_footer_drift,
-    check_breadcrumb,
+    check_autop,
     check_meta_description,
     check_title,
     check_canonical,

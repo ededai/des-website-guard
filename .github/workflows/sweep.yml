@@ -19,7 +19,14 @@ on:
 jobs:
   sweep:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      # Scheduled runs sweep EVERY active site. The old `inputs.site || 'trw'`
+      # meant cron events (which carry no inputs) only ever swept TRW, so AURA
+      # went live with zero coverage. Manual dispatch still targets one site.
+      matrix:
+        site: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', github.event.inputs.site)) || fromJSON('["trw", "aura"]') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -42,22 +49,24 @@ jobs:
             *)               echo "tier=${{ github.event.inputs.tier }}" >> $GITHUB_OUTPUT ;;
           esac
 
-      - name: Pick site
-        id: site
-        run: echo "site=${{ github.event.inputs.site || 'trw' }}" >> $GITHUB_OUTPUT
-
       - name: Run Des sweep
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python -m src.run --site=${{ steps.site.outputs.site }} --tier=${{ steps.tier.outputs.tier }}
+        run: python -m src.run --site=${{ matrix.site }} --tier=${{ steps.tier.outputs.tier }}
 
       - name: Commit updated bug log
+        # Runs even when the sweep step fails — findings logged before a
+        # crash or an undelivered-alert exit must still persist.
+        if: always()
         run: |
           git config user.name "des-bot"
           git config user.email "des-bot@users.noreply.github.com"
-          if [ -f bug-log.jsonl ] && ! git diff --quiet bug-log.jsonl 2>/dev/null; then
-            git add bug-log.jsonl
-            git commit -m "des: update bug log [skip ci]"
+          # bug-log.jsonl was untracked, so the old `git diff --quiet` gate
+          # never fired and the cloud log was thrown away after every run.
+          git add bug-log.jsonl
+          if ! git diff --cached --quiet; then
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
+            git commit -m "des: update bug log (${{ matrix.site }}) [skip ci]"
             git push
           fi

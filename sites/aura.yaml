@@ -1,15 +1,48 @@
 name: AURA
-url: TBD
-sitemap: TBD
+url: https://auraanimalrehab.com
+sitemap: https://auraanimalrehab.com/sitemap_index.xml
 in_charge: Codi
 backup_in_charge: Codi
-canonical_chrome_baseline: TBD
+canonical_chrome_baseline: https://auraanimalrehab.com/
 
-# AURA rebuild begins ~2026-05-06. This config is a placeholder.
-# Codi populates URL, sitemap, baseline, and in-charge once the new site is up.
+# Activated 2026-07-03 during the deep audit (was a pre-launch placeholder;
+# the site had been live since ~May 2026 with zero coverage).
+active: true
+
+# AURA has no reviewer byline and no TRW address — leave these unset so the
+# site-aware checks skip them instead of demanding TRW content on AURA pages.
+required_byline: null
+address_marker: null
+address_unit: null
+
+# Footer fingerprints stay disabled ([]) until the footer is standardised —
+# the 2026-07-03 audit found FIVE footer variants live, so locking a canonical
+# list now would either storm or bless a broken state. Re-enable after fix.
+canonical_footer_fingerprints: []
+
+# No required nav link (TRW uses this for the COE link).
+required_nav_link: null
+
+nav_selector: "header nav, nav"
+
+bc_exempt_slugs:
+  - /
+  - /services/
+  - /conditions/
+  - /topics/
+  - /blog/
 
 skip_paths:
   - /wp-admin/
   - /wp-login.php
 
-active: false   # set to true after AURA rebuild lands
+priority_paths:
+  - /services/
+  - /conditions/
+  - /contact/
+  - /about/
+  - /blog/
+
+byline_exempt_paths: []
+
+waivers: []

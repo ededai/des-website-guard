@@ -37,6 +37,24 @@ def load_site(name):
     return yaml.safe_load(p.read_text())
 
 
+# Console messages that are browser/CSS noise, not JavaScript errors.
+# Per the 2026-06-20 incident (feedback_des_audit_no_handler_false_positives):
+# only genuine JS errors count. Sites can extend via `console_ignore_patterns`.
+CONSOLE_IGNORE_PATTERNS = [
+    "Ignored @property rule",
+    "Content Security Policy",
+    "Tracking Prevention",
+    "third-party cookie",
+    "[issue]",
+    "[warning]",
+    "[debug]",
+]
+
+
+def _console_noise(text, extra_patterns):
+    return any(p in text for p in CONSOLE_IGNORE_PATTERNS) or any(p in text for p in (extra_patterns or []))
+
+
 async def render_and_check(playwright, url, site, viewports):
     """Open URL across viewports. Run check battery. Return list of findings."""
     findings_per_viewport = {}
@@ -47,11 +65,23 @@ async def render_and_check(playwright, url, site, viewports):
             ctx_args = {"viewport": {"width": vp["width"], "height": vp["height"]}}
             if vp.get("user_agent"):
                 ctx_args["user_agent"] = vp["user_agent"]
+            # Real mobile emulation — without these, phone viewports are just
+            # narrow desktop windows and mobile-only bugs never reproduce.
+            if vp.get("is_mobile"):
+                ctx_args["is_mobile"] = True
+                ctx_args["has_touch"] = True
+                ctx_args["device_scale_factor"] = vp.get("device_scale_factor", 2)
             ctx = await browser.new_context(**ctx_args)
             page = await ctx.new_page()
             captured_errors = []
+            ignore_extra = site.get("console_ignore_patterns") or []
             page.on("pageerror", lambda exc: captured_errors.append(str(exc)))
-            page.on("console", lambda msg: captured_errors.append(f"[{msg.type}] {msg.text}") if msg.type == "error" else None)
+            page.on(
+                "console",
+                lambda msg: captured_errors.append(f"[{msg.type}] {msg.text}")
+                if msg.type == "error" and not _console_noise(msg.text, ignore_extra)
+                else None,
+            )
 
             try:
                 # Use "commit" + DOMContentLoaded fallback so slow third-party
@@ -74,30 +104,58 @@ async def render_and_check(playwright, url, site, viewports):
                 findings_per_viewport.setdefault(vp_name, []).append({"url": url, "viewport": vp_name, "check": "http_5xx", "severity": "critical", "evidence": f"HTTP {status}"})
                 await ctx.close()
                 continue
+            if status and status >= 400:
+                # 404/410 on a sitemap-published URL is a dead page Google is
+                # being told to index — high. 403/429 under a fast headless
+                # crawl is usually a Cloudflare/bot challenge, not a site bug —
+                # medium, so it surfaces without paging anyone at 3am.
+                if status in (404, 410):
+                    f = {"check": "http_4xx_dead_page", "severity": "high", "evidence": f"HTTP {status} on sitemap URL"}
+                else:
+                    f = {"check": "http_4xx_access_blocked", "severity": "medium", "evidence": f"HTTP {status} (possible bot challenge under crawl)"}
+                f.update({"url": url, "viewport": vp_name})
+                findings_per_viewport.setdefault(vp_name, []).append(f)
+                await ctx.close()
+                continue
 
             html = await page.content()
             findings = []
 
-            # html-level checks
+            # html-level checks (site-agnostic battery)
             from urllib.parse import urlparse
             url_path = urlparse(url).path.rstrip("/") + "/"
             byline_exempt = [
                 p.rstrip("/") + "/" for p in (site.get("byline_exempt_paths") or [])
             ]
             for fn in content_rules.ALL_HTML_CHECKS:
-                # Skip byline check on hub, utility, and contact pages
-                if fn is content_rules.check_byline and any(
-                    url_path.startswith(p) for p in byline_exempt
-                ):
-                    continue
                 f = fn(html)
                 if f:
                     f["url"] = url
                     f["viewport"] = vp_name
                     findings.append(f)
 
-            # markers (TRW service pages)
-            if "/services/" in url and "/services/" != url.rstrip("/").split("therightworkshop.com")[-1]:
+            # site-aware checks — all values come from sites/<site>.yaml so a
+            # non-TRW site never gets judged against TRW rules.
+            site_checks = []
+            if site.get("required_byline") and not any(url_path == p or url_path.startswith(p) for p in byline_exempt) and url_path != "/":
+                site_checks.append(content_rules.check_byline(html, expected=site["required_byline"]))
+            site_checks.append(content_rules.check_address_unit(
+                html, unit=site.get("address_unit") or "", address_marker=site.get("address_marker") or ""))
+            fps = site.get("canonical_footer_fingerprints")
+            if fps is not None:
+                site_checks.append(content_rules.check_footer_drift(html, url=url, fingerprints=fps))
+            bc_exempt = set(site.get("bc_exempt_slugs") or []) or None
+            site_checks.append(content_rules.check_breadcrumb(html, url=url, exempt_slugs=bc_exempt))
+            for f in site_checks:
+                if f:
+                    f["url"] = url
+                    f["viewport"] = vp_name
+                    findings.append(f)
+
+            # markers (service sub-pages; the /services/ hub itself is exempt).
+            # The old hub-exclusion compared against a hardcoded
+            # therightworkshop.com split and could never be true.
+            if url_path.startswith("/services/") and url_path != "/services/":
                 f = content_rules.check_required_markers(html, site.get("required_markers", {}).get("service_pages", []))
                 if f:
                     f["url"] = url
@@ -112,7 +170,7 @@ async def render_and_check(playwright, url, site, viewports):
             for fn in checks:
                 try:
                     if fn is visual.check_chrome_consistency:
-                        f = await fn(page, None, None)
+                        f = await fn(page, site)
                     else:
                         f = await fn(page)
                 except Exception as e:
@@ -136,23 +194,32 @@ async def render_and_check(playwright, url, site, viewports):
     return findings_per_viewport
 
 
+SEV_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+
+
 def dedupe(all_findings, site_name, in_charge):
-    """Group by check_id; one finding per check with affected URL list."""
+    """Group by check_id; one finding per check with affected URL list.
+    Evidence is str()-coerced (some checks return dict evidence — this
+    crashed every weekly/deep sweep from 2026-05-15 to 2026-07-03), and the
+    group takes the WORST severity seen, not whichever arrived first."""
     grouped = {}
     for f in all_findings:
         key = f["check"]
+        ev = str(f.get("evidence", ""))
         g = grouped.setdefault(key, {
             "title": key.replace("_", " ").title(),
             "check_id": key,
             "severity": f["severity"],
             "site": site_name,
             "in_charge": in_charge,
-            "summary": f.get("evidence", "")[:200],
+            "summary": ev[:200],
             "urls": [],
-            "evidence": f.get("evidence", ""),
+            "evidence": ev,
             "first_seen": datetime.now(timezone.utc).isoformat(),
             "status": "open",
         })
+        if SEV_RANK.get(f["severity"], 9) < SEV_RANK.get(g["severity"], 9):
+            g["severity"] = f["severity"]
         if f["url"] not in g["urls"]:
             g["urls"].append(f["url"])
     return list(grouped.values())
@@ -236,21 +303,32 @@ async def main():
         print(f"site '{args.site}' has no sitemap configured yet")
         return
 
-    urls = discover_urls(site["sitemap"])
+    try:
+        urls = discover_urls(site["sitemap"])
+    except Exception as e:
+        print(f"DES: FATAL — sitemap fetch failed for {site['sitemap']}: {e}")
+        sys.exit(2)
+    if not urls:
+        # Zero URLs must never look like a clean sweep — fail loudly so the
+        # CI run goes red instead of a silent green with nothing scanned.
+        print(f"DES: FATAL — sitemap {site['sitemap']} yielded 0 URLs")
+        sys.exit(2)
     urls = filter_skip(urls, site.get("skip_paths", []))
 
-    # Priority-first: hub + section pages always checked before individual articles
-    priority_prefixes = [p.rstrip("/") for p in (site.get("priority_paths") or [])]
+    # Priority-first: homepage, then hub + section pages, then articles.
+    priority_prefixes = [p.rstrip("/") for p in (site.get("priority_paths") or []) if p.rstrip("/")]
     if priority_prefixes:
         site_base = site["url"].rstrip("/")
-        priority_urls, rest_urls = [], []
+        home_urls, priority_urls, rest_urls = [], [], []
         for u in urls:
             path = u.replace(site_base, "").rstrip("/") or "/"
-            if any(path == p or path.startswith(p + "/") for p in priority_prefixes):
+            if path == "/":
+                home_urls.append(u)
+            elif any(path == p or path.startswith(p + "/") for p in priority_prefixes):
                 priority_urls.append(u)
             else:
                 rest_urls.append(u)
-        urls = priority_urls + rest_urls
+        urls = home_urls + priority_urls + rest_urls
 
     if args.limit:
         urls = urls[: args.limit]
@@ -262,7 +340,13 @@ async def main():
     all_findings = []
     async with async_playwright() as pw:
         for u in urls:
-            per_vp = await render_and_check(pw, u, site, viewports)
+            # Fault isolation: one exploding page must not discard the whole
+            # sweep's findings (previously a single crash lost everything).
+            try:
+                per_vp = await render_and_check(pw, u, site, viewports)
+            except Exception as e:
+                all_findings.append({"url": u, "viewport": "n/a", "check": "sweep_page_crash", "severity": "high", "evidence": f"render_and_check raised: {e}"})
+                continue
             for vp, fs in per_vp.items():
                 all_findings.extend(fs)
 
@@ -286,6 +370,19 @@ async def main():
     for f in findings:
         route(f, dry_run=args.dry_run)
     send_digests(findings, site["name"], args.tier, dry_run=args.dry_run)
+
+    # Lifecycle: close issues that stopped firing (full sweeps only — a
+    # --limit run hasn't seen every page and must not mass-close).
+    if not args.dry_run and not args.limit:
+        closed = bug_log.reconcile(site["name"], {f["check_id"] for f in findings})
+        if closed:
+            print(f"DES: {len(closed)} issue(s) auto-closed as fixed: {', '.join(closed)}")
+
+    # Alerts that failed to deliver must fail the run — a green sweep whose
+    # Telegram went nowhere is how criticals get missed.
+    if telegram.UNDELIVERED and not args.dry_run:
+        print(f"DES: FATAL — {len(telegram.UNDELIVERED)} alert(s) undelivered")
+        sys.exit(3)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 name: TRW
 url: https://therightworkshop.com
-sitemap: https://therightworkshop.com/wp-sitemap.xml
+sitemap: https://therightworkshop.com/sitemap_index.xml   # wp-sitemap.xml now 301s here (RankMath)
 in_charge: Bryan
 backup_in_charge: Codi
 canonical_chrome_baseline: https://therightworkshop.com/
@@ -11,20 +11,30 @@ required_markers:
     - MOBILE-NAV-FIX-2026-04-25
 
 # Canonical footer fingerprints — must appear on every published page.
-# Source of truth: homepage (WP ID 90). Locked 2026-05-05.
+# Re-verified 2026-07-03 against all 128 live pages (each present 128/128).
+# The old `footer-nav-col` entry was stale: absent from every page.
 canonical_footer_fingerprints:
   - footer-social-btn
   - footer-brand-logo
-  - footer-nav-col
+  - footer-col-title
   - footer-brand-tag
+  - footer-grid
 
-# Nav integrity — COE link must be present between Blog and Contact on every page.
-required_nav_links:
-  - /coe-results/
+# Nav integrity — COE link must be present on every page (href substring).
+required_nav_link: coe-results
 
 required_byline: "Reviewed by The Right Workshop team"
 
-required_address_unit: "#02-61"
+address_marker: "Kaki Bukit"
+address_unit: "#02-61"
+
+# Pages that legitimately have no breadcrumb (top-level hubs / homepage)
+bc_exempt_slugs:
+  - /
+  - /services/
+  - /topics/
+  - /brands/
+  - /blog/
 
 skip_paths:
   - /wp-admin/
@@ -36,26 +46,31 @@ skip_paths:
   - /author/
   - /attachment/
 
-# Pages that don't carry the reviewer byline — hub, utility, and contact pages
+# Pages that don't carry the reviewer byline — hub, utility, and contact pages.
+# NOTE: /privacy/ and /terms/ are the live slugs (the old /privacy-policy/
+# entry matched nothing).
 byline_exempt_paths:
   - /contact/
   - /about/
   - /team/
   - /faq/
+  - /privacy/
   - /privacy-policy/
   - /terms/
   - /blog/
   - /topics/
   - /services/
   - /brands/
+  - /brands-we-service/
   - /guides/
   - /car-tips/
   - /news/
   - /coe-results/
 
-# Hub and section pages checked first in every sweep — articles follow
+# Hub and section pages checked first in every sweep — articles follow.
+# "/" removed 2026-07-03: as a prefix it matched EVERY url and neutralised
+# the ordering (the homepage is prepended in code regardless).
 priority_paths:
-  - /
   - /blog/
   - /services/
   - /topics/
@@ -73,5 +88,5 @@ photon_required_paths:
 
 # Pages that legitimately differ from canonical chrome (no header/footer expected)
 chrome_exempt_paths:
-  - /privacy-policy/
+  - /privacy/
   - /terms/

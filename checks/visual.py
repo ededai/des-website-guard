@@ -9,17 +9,24 @@ MAROON_RGB_PATTERNS = [
 ]
 
 
-async def check_chrome_consistency(page, baseline_header_html, baseline_footer_html):
-    nav = await page.query_selector("nav.nav, .trw-injected-nav")
-    footer = await page.query_selector("footer, .trw-injected-footer")
+async def check_chrome_consistency(page, site=None):
+    """Presence checks for nav/footer plus a site-configured required nav link.
+    Selectors and the required link come from sites/<site>.yaml so this no
+    longer hardcodes TRW chrome (it used to demand a COE link on every site)."""
+    site = site or {}
+    nav_sel = site.get("nav_selector") or "nav.nav, .trw-injected-nav, header nav, nav:not([class*='bread']):not(.bc)"
+    footer_sel = site.get("footer_selector") or "footer, .trw-injected-footer"
+    nav = await page.query_selector(nav_sel)
+    footer = await page.query_selector(footer_sel)
     if not nav:
         return {"check": "missing_nav", "severity": "critical", "evidence": "no <nav> on page"}
     if not footer:
         return {"check": "missing_footer", "severity": "critical", "evidence": "no <footer> on page"}
-    # COE link must appear in nav
-    coe_in_nav = await page.query_selector("nav.nav a[href*='coe-results'], .trw-injected-nav a[href*='coe-results'], .nav-links a[href*='coe-results']")
-    if not coe_in_nav:
-        return {"check": "missing_coe_nav_link", "severity": "high", "evidence": "COE link not found in nav — expected between Blog and Contact"}
+    required = site.get("required_nav_link")  # e.g. "coe-results" for TRW
+    if required:
+        hit = await page.query_selector(f"{nav_sel.split(',')[0]} a[href*='{required}'], nav a[href*='{required}'], .nav-links a[href*='{required}']")
+        if not hit:
+            return {"check": "missing_required_nav_link", "severity": "high", "evidence": f"nav link containing '{required}' not found"}
     return None
 
 
@@ -103,10 +110,11 @@ async def check_mobile_menu(page):
         };
         const btn = document.getElementById('navHamburger')
                  || document.getElementById('trwNavHamburger')
-                 || document.querySelector('.nav-hamburger');
+                 || document.querySelector('.nav-hamburger, .hamburger, .menu-toggle, .nav-toggle, button[aria-label*="menu" i], [class*="hamburger"], [class*="menu-btn"]');
         if (!btn) return { issue: 'no_hamburger' };
         // Capture pre-click state
-        const nav = document.getElementById('mobileNav') || document.querySelector('.mobile-nav');
+        const nav = document.getElementById('mobileNav')
+                 || document.querySelector('.mobile-nav, [class*="mobile-nav"], [class*="drawer"], nav[class*="menu"]');
         if (!nav) return { issue: 'no_drawer' };
         btn.click();
         await new Promise(r => setTimeout(r, 120));

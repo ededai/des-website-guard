@@ -12,15 +12,30 @@ import os
 import requests
 
 
+UNDELIVERED = []  # alerts that failed to send; run.py fails the sweep if non-empty
+
+
 def send(text):
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     if not (token and chat_id):
-        print(f"[DES] (telegram skipped, missing env): {text}")
-        return
+        # Never fail silent: record it so the sweep exits non-zero and CI
+        # shows red instead of a green run whose alerts went nowhere.
+        UNDELIVERED.append(text)
+        print(f"[DES] ALERT NOT DELIVERED (telegram credentials missing): {text[:200]}")
+        return False
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    r = requests.post(url, data={"chat_id": chat_id, "text": text, "disable_web_page_preview": "true"}, timeout=15)
-    r.raise_for_status()
+    try:
+        r = requests.post(url, data={"chat_id": chat_id, "text": text, "disable_web_page_preview": "true"}, timeout=15)
+        r.raise_for_status()
+        return True
+    except requests.RequestException as e:
+        # Do NOT print the exception or URL — both can contain the bot token,
+        # and Actions logs are public. Status code + reason only.
+        status = getattr(getattr(e, "response", None), "status_code", "n/a")
+        UNDELIVERED.append(text)
+        print(f"[DES] ALERT NOT DELIVERED (telegram HTTP {status}): {text[:200]}")
+        return False
 
 
 def format_critical(finding):

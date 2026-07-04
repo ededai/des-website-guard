@@ -96,15 +96,32 @@ def log_finding(finding):
     return str(_path())
 
 
+# Check ids the harness itself emits. reconcile() only auto-closes these —
+# manually logged findings (audit campaigns, ad-hoc entries) use other ids and
+# must be closed by a human/close_finding, or a clean sweep would mass-close
+# issues the harness never re-checks.
+HARNESS_CHECK_IDS = {
+    "load_failed", "http_5xx", "http_4xx_dead_page", "http_4xx_access_blocked",
+    "sweep_page_crash", "missing_nav", "missing_footer", "missing_required_nav_link",
+    "maroon_leak", "broken_images", "console_errors", "mobile_menu", "dead_buttons",
+    "em_dash", "autop_injection", "missing_byline", "missing_unit_number",
+    "footer_drift", "missing_breadcrumb", "missing_meta_description",
+    "long_meta_description", "missing_title", "long_title", "missing_canonical",
+    "missing_h1", "multiple_h1", "missing_alt", "missing_markers",
+}
+
+
 def reconcile(site, current_check_ids):
-    """Close every open issue for `site` whose check no longer fires.
-    Call ONLY after a full-sitemap sweep (a --limit run would mass-close
+    """Close every open HARNESS-emitted issue for `site` whose check no longer
+    fires. Call ONLY after a full-sitemap sweep (a --limit run would mass-close
     issues on pages it never visited)."""
     entries = _load()
     now = datetime.now(timezone.utc)
     closed = []
     for e in entries:
         if e.get("site") != site or e.get("status") not in ("open", "reopened"):
+            continue
+        if e.get("check_id") not in HARNESS_CHECK_IDS:
             continue
         if e.get("check_id") in current_check_ids:
             continue

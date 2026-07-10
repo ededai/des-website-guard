@@ -159,22 +159,37 @@ async def check_mobile_menu(page):
 async def check_buttons_clickable(page):
     """Light-touch — make sure each button has a meaningful destination
     (anchor href or onclick or data-action). Skip actually triggering
-    side effects like booking submits."""
+    side effects like booking submits.
+
+    Only anchors a user can actually see count as dead: invisible DOM
+    (unconfigured theme placeholders, drawers closed at this viewport) is
+    reported separately in evidence but does not fire the finding. Jetpack
+    injects hrefless markup by design (sharedaddy `sd-link-color`, the
+    subscribe-modal "Continue reading") — exempt, not fixable in content."""
     out = await page.evaluate("""() => {
         const nodes = document.querySelectorAll('a, button, [role=button]');
-        let dead = 0;
+        let dead = 0, invisibleDead = 0;
         const samples = [];
         for (const n of nodes) {
             const tag = n.tagName;
             const href = n.getAttribute('href');
-            const onclick = n.getAttribute('onclick');
-            const role = n.getAttribute('role');
             const text = (n.innerText || '').trim().slice(0, 40);
-            if (tag === 'A' && (!href || href === '#')) { dead++; samples.push(text || '(empty link)'); }
-            if (tag === 'BUTTON' && !onclick && !n.type && !n.form) { /* might be JS-bound, allow */ }
+            if (tag === 'A' && (!href || href === '#')) {
+                if (n.classList.contains('sd-link-color')) continue;
+                if (n.closest('.jetpack-subscribe-modal, .sharedaddy, .jp-relatedposts')) continue;
+                const r = n.getBoundingClientRect();
+                const s = getComputedStyle(n);
+                const visible = r.width > 0 || r.height > 0
+                    ? (s.visibility !== 'hidden' && s.display !== 'none' && parseFloat(s.opacity || '1') > 0.01)
+                    : false;
+                if (!visible) { invisibleDead++; continue; }
+                dead++; samples.push(text || '(empty link)');
+            }
+            if (tag === 'BUTTON') { /* might be JS-bound, allow */ }
         }
-        return { dead, samples: samples.slice(0, 5) };
+        return { dead, invisibleDead, samples: samples.slice(0, 5) };
     }""")
     if out and out.get("dead", 0) > 2:
-        return {"check": "dead_buttons", "severity": "medium", "evidence": f"{out['dead']} dead anchors: {out['samples']}"}
+        extra = f" ({out['invisibleDead']} invisible skipped)" if out.get("invisibleDead") else ""
+        return {"check": "dead_buttons", "severity": "medium", "evidence": f"{out['dead']} dead anchors: {out['samples']}{extra}"}
     return None

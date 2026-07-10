@@ -1,5 +1,10 @@
 name: Des Website Sweep
 
+# Without write permission every "Commit updated bug log" push 403s and the
+# day's findings die on the runner (broken 2026-07-04 → 2026-07-10).
+permissions:
+  contents: write
+
 on:
   schedule:
     - cron: "0 0 * * *"            # daily 08:00 SGT — critical sweep
@@ -68,5 +73,16 @@ jobs:
           if ! git diff --cached --quiet; then
             git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
             git commit -m "des: update bug log (${{ matrix.site }}) [skip ci]"
-            git push
+            # trw + aura matrix jobs can push concurrently — retry on non-fast-forward,
+            # and fail LOUD if all retries lose (silent loss is what broke Jul 4-10).
+            pushed=""
+            for i in 1 2 3; do
+              if git push; then pushed=1; break; fi
+              git pull --rebase origin "${GITHUB_REF_NAME:-main}" || true
+              sleep $((i * 5))
+            done
+            if [ -z "$pushed" ]; then
+              echo "ERROR: bug-log push failed after 3 attempts" >&2
+              exit 1
+            fi
           fi

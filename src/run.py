@@ -222,6 +222,13 @@ def dedupe(all_findings, site_name, in_charge):
             g["severity"] = f["severity"]
         if f["url"] not in g["urls"]:
             g["urls"].append(f["url"])
+        # Merge DISTINCT evidence strings instead of keeping only the first.
+        # 2026-07-10: an autop_injection group spanning p_wrapped_comment (1 pg)
+        # and p_wrapped_script (6 pgs) alerted as "7 pages" but named only the
+        # comment signature — the script family was invisible in the alert.
+        if ev and ev not in g["evidence"]:
+            g["evidence"] = f"{g['evidence']}; {ev}"
+            g["summary"] = g["evidence"][:200]
     return list(grouped.values())
 
 

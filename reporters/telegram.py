@@ -49,10 +49,13 @@ def format_critical(finding):
 
 
 def format_high(finding):
+    # Top URLs included since 2026-07-10 — a high alert without page names
+    # cost a full site re-scan to locate the 7 autop pages.
     return (
         f"[DES] HIGH — {finding['title']}\n"
         f"Site: {finding['site']} | Severity: high | Affected: {len(finding['urls'])} pages\n"
         f"{finding['summary']}\n"
+        + "Top URLs:\n" + "\n".join("- " + u for u in finding["urls"][:3]) + "\n"
         + f"In-charge: {finding['in_charge']}\n"
         + f"Codi reroutes to {finding['in_charge']} now."
     )

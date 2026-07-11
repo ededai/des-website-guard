@@ -80,16 +80,38 @@ jobs:
           git config user.email "des-bot@users.noreply.github.com"
           # bug-log.jsonl was untracked, so the old `git diff --quiet` gate
           # never fired and the cloud log was thrown away after every run.
-          git add bug-log.jsonl
-          if ! git diff --cached --quiet; then
+          #
+          # ORDER MATTERS: pull BEFORE add. `git pull --rebase --autostash`
+          # pops the stash back UNSTAGED, so anything added earlier vanishes
+          # from the index and `git commit` dies on an empty index whenever
+          # origin moved mid-sweep (run 29171955477, 2026-07-12). Stage after
+          # the pull, and re-stage inside the retry loop for the same reason.
+          bail_if_unmerged() {
+            if git ls-files -u | grep -q .; then
+              echo "ERROR: rebase left bug-log.jsonl unmerged — refusing to stage conflict markers" >&2
+              git rebase --abort 2>/dev/null || true
+              exit 1
+            fi
+          }
+          if git status --porcelain -- bug-log.jsonl | grep -q .; then
             git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
+            bail_if_unmerged
+            git add bug-log.jsonl
+            if git diff --cached --quiet; then
+              echo "bug log matched origin after rebase; nothing to commit"
+              exit 0
+            fi
             git commit -m "des: update bug log (${{ matrix.site }}) [skip ci]"
-            # trw + aura matrix jobs can push concurrently — retry on non-fast-forward,
-            # and fail LOUD if all retries lose (silent loss is what broke Jul 4-10).
+            # Concurrent writers (other site's run, local dev pushes) — retry on
+            # non-fast-forward, fail LOUD if all retries lose (silent loss is
+            # what broke Jul 4-10).
             pushed=""
             for i in 1 2 3; do
               if git push; then pushed=1; break; fi
-              git pull --rebase origin "${GITHUB_REF_NAME:-main}" || true
+              git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
+              bail_if_unmerged
+              git add bug-log.jsonl
+              git diff --cached --quiet || git commit -m "des: update bug log (${{ matrix.site }}) [skip ci]" || true
               sleep $((i * 5))
             done
             if [ -z "$pushed" ]; then

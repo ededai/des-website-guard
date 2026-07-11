@@ -23,6 +23,13 @@ canonical_footer_fingerprints:
 # Nav integrity — COE link must be present on every page (href substring).
 required_nav_link: coe-results
 
+# --- checks/recheck.py producer config (AURA-only checks; null = use generic
+# fallbacks / disable — TRW has no records for these curated ids). Present here
+# so every producer's site.get(...) resolves gracefully on both sites. ---
+header_scrim_marker: null
+mobile_nav_toggle_selector: null
+mobile_nav_drawer_selector: null
+
 required_byline: "Reviewed by The Right Workshop team"
 
 address_marker: "Kaki Bukit"

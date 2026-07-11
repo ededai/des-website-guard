@@ -108,7 +108,32 @@ HARNESS_CHECK_IDS = {
     "footer_drift", "missing_breadcrumb", "missing_meta_description",
     "long_meta_description", "missing_title", "long_title", "missing_canonical",
     "missing_h1", "multiple_h1", "missing_alt", "missing_markers",
+    # Curated deep-audit ids, now auto-verified each full sweep by a producer in
+    # checks/recheck.py (see checks.recheck.REGISTRY). Safe to reconcile ONLY
+    # because that producer re-tests the specific bug and emits this id when it
+    # still reproduces (and a keep-open synthetic if it crashes). Adding any of
+    # these WITHOUT a recheck producer would cause a false mass-close.
+    "mobile_menu_no_open", "autop_p_script_wrap", "meta_description_css_leak",
+    "coe_hub_dead_bidding_links", "phantom_topic_tag_links", "overflow_phone",
+    "comparison_table_clipped_mobile", "home_hero_left_clip_desktop",
+    "no_mobile_navigation", "cookie_banner_covers_form_mobile", "home_header_contrast",
+    "hub_links_to_unbuilt_conditions", "nav_visit_only_homepage", "footer_five_variants",
+    "opening_hours_contradictions", "vet_report_policy_contradiction", "en_dash_footer_hours",
 }
+
+
+def open_records(site, check_ids=None):
+    """Return the open/reopened records for `site`. If `check_ids` is given, only
+    those whose check_id is in it (used by the curated recheck stage to fetch the
+    records it can re-verify). Read-only; does not mutate the log."""
+    out = []
+    for e in _load():
+        if e.get("site") != site or e.get("status") not in ("open", "reopened"):
+            continue
+        if check_ids is not None and e.get("check_id") not in check_ids:
+            continue
+        out.append(e)
+    return out
 
 
 def reconcile(site, current_check_ids):

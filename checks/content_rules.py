@@ -12,7 +12,15 @@ EM_DASH_RE = re.compile(r"[\u2014\u2013]|--")  # em + en + double-dash
 # These hold "\u2014" / "\u2014\u2014" only until client-side JS replaces them with real values, so a
 # raw-HTML scan would false-positive on the em-dash. Add a data-attribute here to teach
 # Des to ignore a new placeholder. (Learned 2026-06-16: COE chart range/date/count cells.)
-EM_DASH_IGNORE_SELECTORS = ["[data-range-text]", "[data-date-pill]", "[data-round-count]"]
+EM_DASH_IGNORE_SELECTORS = [
+    "[data-range-text]", "[data-date-pill]", "[data-round-count]",
+    # AURA photo-slot adjuster labels ("Photo — After WhatsApp" etc.) are
+    # display:none; BeautifulSoup.get_text() can't see CSS visibility, so their
+    # em dash false-positived em_dash on contact/grooming/massage-therapy/
+    # pain-management/underwater-treadmill (2026-07-11). Verified live: the
+    # .aura-slot-label nodes are display:none and absent from real innerText.
+    ".aura-slot-label",
+]
 
 
 def visible_text(html, ignore_selectors=None):

@@ -20,10 +20,23 @@ address_unit: null
 # list now would either storm or bless a broken state. Re-enable after fix.
 canonical_footer_fingerprints: []
 
-# No required nav link (TRW uses this for the COE link).
-required_nav_link: null
+# Required nav link (same semantics as TRW's coe-results: an href substring that
+# checks/visual.check_chrome_consistency demands in every page's nav). The
+# 'Visit' item anchors to "#visit" (verified live on /, /about/, /services/);
+# this makes the harness-native missing_required_nav_link check cover the
+# nav_visit_only_homepage bug going forward. Set to null to disable.
+required_nav_link: "#visit"
 
 nav_selector: "header nav, nav"
+
+# --- checks/recheck.py producer config (safe defaults if absent) ---
+# home_header_contrast: proof-of-fix marker injected by the deployed header
+# scrim/polish CSS. Absent -> the contrast fix is missing -> the recheck fires.
+header_scrim_marker: "aura-chrome-polish-css"
+# no_mobile_navigation: the deployed mobile-nav fix injects these; any visible
+# toggle + drawer counts, but these are checked first. null -> generic fallback.
+mobile_nav_toggle_selector: ".aura-mnav-toggle"
+mobile_nav_drawer_selector: ".aura-mnav-drawer"
 
 bc_exempt_slugs:
   - /

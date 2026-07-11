@@ -28,7 +28,7 @@ sys.path.insert(0, str(ROOT))
 
 from src.devices import DEVICES
 from src.sitemap import discover_urls, filter_skip
-from checks import content_rules, visual
+from checks import content_rules, visual, recheck
 from reporters import telegram, bug_log
 
 
@@ -356,6 +356,23 @@ async def main():
                 continue
             for vp, fs in per_vp.items():
                 all_findings.extend(fs)
+
+        # Curated-finding recheck (Des v2). Re-test the open curated bugs from
+        # the manual deep audit whose check_ids the normal battery never emits,
+        # so they can auto-close once fixed live instead of freezing forever.
+        # Runs in the SAME gate as reconcile() (full sweeps only: not dry-run,
+        # not --limit) and BEFORE dedupe/route/reconcile, sharing this live
+        # Playwright instance. Emitted findings flow through the normal
+        # dedupe -> route -> log_finding path (bumping last_seen) and their ids
+        # land in current_check_ids so reconcile leaves still-broken ones open.
+        # A crashed/unverifiable recheck emits a low keep-open finding, never a
+        # silent absence — so reconcile can't false-close a bug we didn't verify.
+        if not args.dry_run and not args.limit:
+            open_curated = bug_log.open_records(site["name"], set(recheck.REGISTRY))
+            if open_curated:
+                print(f"DES: rechecking {len(open_curated)} open curated finding(s)")
+                rc_findings = await recheck.run_site_rechecks(pw, site, open_curated, urls)
+                all_findings.extend(rc_findings)
 
     findings = dedupe(all_findings, site["name"], site["in_charge"])
     findings.sort(key=lambda f: {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(f["severity"], 9))

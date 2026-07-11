@@ -27,6 +27,10 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
+      # Both matrix jobs commit to the same bug-log.jsonl; running them
+      # concurrently loses one side to an autostash-rebase conflict
+      # (trw job died this way on 2026-07-11, run 29146241982).
+      max-parallel: 1
       # Scheduled runs sweep EVERY active site. The old `inputs.site || 'trw'`
       # meant cron events (which carry no inputs) only ever swept TRW, so AURA
       # went live with zero coverage. Manual dispatch still targets one site.

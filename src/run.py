@@ -274,10 +274,15 @@ def route(finding, dry_run=False):
     # medium / low handled in send_digests() after the sweep finishes
 
 
-def send_digests(findings, site_name, tier, dry_run=False):
-    """Emit batched Telegram digests for medium and low after the sweep finishes."""
-    medium = [f for f in findings if f["severity"] == "medium"]
-    low = [f for f in findings if f["severity"] == "low"]
+def send_digests(findings, site_name, tier, dry_run=False, mute=()):
+    """Emit batched Telegram digests for medium and low after the sweep finishes.
+    Check ids in `mute` (yaml: digest_mute_checks) keep the full bug-log
+    lifecycle but never ping Telegram — Ed muted em_dash on 2026-07-12."""
+    muted = [f for f in findings if f["check_id"] in mute and f["severity"] in ("medium", "low")]
+    if muted:
+        print(f"DES: digest muted for {len(muted)} finding(s): {sorted(f['check_id'] for f in muted)}")
+    medium = [f for f in findings if f["severity"] == "medium" and f["check_id"] not in mute]
+    low = [f for f in findings if f["severity"] == "low" and f["check_id"] not in mute]
     period = {"critical": "daily", "weekly": "weekly", "deep": "bi-weekly"}.get(tier, tier)
     if medium:
         msg = telegram.format_digest(medium, "medium", site_name, period)
@@ -393,7 +398,8 @@ async def main():
     print(f"DES: {len(findings)} unique findings")
     for f in findings:
         route(f, dry_run=args.dry_run)
-    send_digests(findings, site["name"], args.tier, dry_run=args.dry_run)
+    send_digests(findings, site["name"], args.tier, dry_run=args.dry_run,
+                 mute=set(site.get("digest_mute_checks") or []))
 
     # Lifecycle: close issues that stopped firing (full sweeps only — a
     # --limit run hasn't seen every page and must not mass-close).

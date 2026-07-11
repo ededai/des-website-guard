@@ -570,10 +570,21 @@ async def rc_comparison_table_clipped_mobile(page, record, site):
 
 
 async def rc_home_hero_left_clip_desktop(page, record, site):
+    # Skip screen-reader-only elements: the TRW homepage keeps a
+    # `visually-hidden` H1 (1x1px, clip:rect(0,0,0,0), left:-1px) that is
+    # invisible BY DESIGN — measuring it re-fired this finding forever
+    # (2026-07-12). Only visible, unclipped-by-intent text can "clip".
     clip = await page.evaluate(r"""() => {
         const sel = '.hero h1, [class*="hero"] h1, header h1, .entry-title, h1';
         for (const el of document.querySelectorAll(sel)) {
             const r = el.getBoundingClientRect();
+            const s = getComputedStyle(el);
+            const srOnly = (r.width <= 2 && r.height <= 2)
+                || s.clip === 'rect(0px, 0px, 0px, 0px)'
+                || s.clipPath === 'inset(50%)'
+                || s.visibility === 'hidden' || s.display === 'none'
+                || el.closest('[aria-hidden="true"]');
+            if (srOnly) continue;
             if (r.width > 0 && r.left < 0) return { left: Math.round(r.left), txt: (el.textContent||'').trim().slice(0,40) };
         }
         return null;

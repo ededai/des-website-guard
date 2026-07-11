@@ -97,3 +97,8 @@ photon_required_paths:
 chrome_exempt_paths:
   - /privacy/
   - /terms/
+
+# Tracked in the bug log with full lifecycle, but never sent in Telegram digests
+# (Ed, 2026-07-12: stop pinging em-dash digests; the log + auto-close still run).
+digest_mute_checks:
+  - em_dash

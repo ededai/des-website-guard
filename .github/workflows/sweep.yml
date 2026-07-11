@@ -5,6 +5,13 @@ name: Des Website Sweep
 permissions:
   contents: write
 
+# Whole-RUN serialization. max-parallel only guards matrix jobs inside one run;
+# two dispatched runs (e.g. manual trw + aura) still raced on bug-log.jsonl and
+# the loser died in the autostash rebase (2026-07-12, run 29159115532).
+concurrency:
+  group: des-sweep
+  cancel-in-progress: false
+
 on:
   schedule:
     - cron: "0 0 * * *"            # daily 08:00 SGT — critical sweep

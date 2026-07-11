@@ -225,14 +225,18 @@ def expand_phantom_targets(evidence, cap=10):
 # ---------------------------------------------------------------------------
 class RecheckCtx:
     """Shared per-site helper for producers: full-page GETs (budget-limited,
-    cached) and HEAD link-liveness probes (unbudgeted). `budget` counts DISTINCT
-    full page loads (GET cache-misses + browser navigations) against the cap."""
+    cached) and HEAD link-liveness probes (unbudgeted). Budgets are SPLIT:
+    plain HTTP GETs are milliseconds (http_budget, generous), browser
+    navigations dominate sweep runtime (nav_budget, tight). One shared pool
+    starved the AURA page producers on 2026-07-12 — 5 rechecks deferred after
+    the HTML producers ate all 15 units on cheap GETs."""
 
-    def __init__(self, site, sitemap_urls, budget=15):
+    def __init__(self, site, sitemap_urls, http_budget=40, nav_budget=15):
         self.site = site
         self.base = (site.get("url") or "").rstrip("/")
         self.sitemap_urls = list(sitemap_urls or [])
-        self.budget = budget
+        self.http_budget = http_budget
+        self.nav_budget = nav_budget
         self._html_cache = {}
 
     def abs_url(self, url):
@@ -240,10 +244,15 @@ class RecheckCtx:
             return url
         return urljoin(self.base + "/", url.lstrip("/"))
 
-    def spend(self):
-        if self.budget <= 0:
-            raise BudgetExhausted("per-site page-load budget exhausted")
-        self.budget -= 1
+    def spend_http(self):
+        if self.http_budget <= 0:
+            raise BudgetExhausted("per-site HTTP fetch budget exhausted")
+        self.http_budget -= 1
+
+    def spend_nav(self):
+        if self.nav_budget <= 0:
+            raise BudgetExhausted("per-site browser-navigation budget exhausted")
+        self.nav_budget -= 1
 
     def fetch(self, url):
         """Full GET (follow redirects). Cached; a cache miss spends 1 load unit.
@@ -251,7 +260,7 @@ class RecheckCtx:
         u = self.abs_url(url)
         if u in self._html_cache:
             return self._html_cache[u]
-        self.spend()
+        self.spend_http()
         if requests is not None:
             r = requests.get(u, headers={"User-Agent": UA}, timeout=FETCH_TIMEOUT, allow_redirects=True)
             result = (r.status_code, r.text)
@@ -482,7 +491,7 @@ def rc_en_dash_footer_hours(record, site, ctx):
 # The orchestrator loads the page at the registry-declared viewport/url first.
 # ===========================================================================
 _HAMBURGER_JS = r"""
-async () => {
+async (sels) => {
   const vis = (el) => {
     if (!el) return false;
     const r = el.getBoundingClientRect();
@@ -490,7 +499,7 @@ async () => {
     return (r.width > 0 && r.height > 0) && s.visibility !== 'hidden'
         && s.display !== 'none' && parseFloat(s.opacity || '1') > 0.05;
   };
-  const toggleSel = arguments[0], drawerSel = arguments[1];
+  const [toggleSel, drawerSel] = sels || [];
   const genericToggle = '.nav-hamburger, .hamburger, .menu-toggle, .nav-toggle,'
       + ' button[aria-label*="menu" i], [class*="hamburger"], [class*="menu-btn"], #navHamburger, #trwNavHamburger';
   const genericDrawer = '.mobile-nav, [class*="mobile-nav"], [class*="drawer"], nav[class*="menu"], #mobileNav';
@@ -645,15 +654,15 @@ def _urls_for(entry, record, ctx):
     return list(record.get("url_list", []))[: entry.get("cap", 3)]
 
 
-async def run_site_rechecks(pw, site, open_records, sitemap_urls, budget=15):
+async def run_site_rechecks(pw, site, open_records, sitemap_urls, http_budget=40, nav_budget=15):
     """Re-test each open curated record whose id is in REGISTRY. Returns a flat
     list of stage-1 finding dicts (check/severity/evidence/url[/viewport]) to be
     appended to the sweep's all_findings BEFORE dedupe. Never raises: every
     producer is wrapped so a crash or exhausted page-load budget emits a
     keep-open synthetic finding instead of silently letting reconcile close the
-    bug. Page-based producers share one browser; page loads are capped by
-    `budget` per site (default 15)."""
-    ctx = RecheckCtx(site, sitemap_urls, budget=budget)
+    bug. Page-based producers share one browser; browser navigations are capped
+    by `nav_budget` (default 15) and plain HTTP GETs by `http_budget` (40)."""
+    ctx = RecheckCtx(site, sitemap_urls, http_budget=http_budget, nav_budget=nav_budget)
     # Deterministic order: worst severity first so the most important bugs get
     # the page-load budget before any medium ones defer under a tight cap.
     sev_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3}
@@ -694,7 +703,7 @@ async def _run_page_producer(browser, entry, record, site, ctx):
     urls = _urls_for(entry, record, ctx)
     subs = []
     for u in urls:
-        ctx.spend()  # each browser navigation counts against the page-load budget
+        ctx.spend_nav()  # browser navigations get their own (tight) budget
         ctx_args = {"viewport": {"width": vp["width"], "height": vp["height"]}}
         if vp.get("user_agent"):
             ctx_args["user_agent"] = vp["user_agent"]

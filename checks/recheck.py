@@ -364,10 +364,25 @@ def rc_coe_hub_dead_bidding_links(record, site, ctx):
 
 
 def rc_phantom_topic_tag_links(record, site, ctx):
+    # A phantom link needs BOTH halves: the target still 404s AND something
+    # still links to it. Checking only target liveness kept this finding open
+    # after every source link was removed or rebuilt (/about-us/ was delinked
+    # site-wide on 2026-07-12 yet still 404s as a URL — that is not a bug).
+    # Sources: the recorded url_list pages, padded with a small sitemap sample.
     targets = expand_phantom_targets(record.get("evidence", ""), cap=10)
-    dead = [t for t in targets if ctx.head_status(t) in DEAD_STATUSES]
+    sources = list(record.get("url_list", []))[:3] or [ctx.base + "/"]
+    sources += ctx.other_pages(exclude=sources, n=5)
+    linked = set()
+    for src in sources:
+        status, html = ctx.fetch(src)
+        if status != 200:
+            continue
+        for t in targets:
+            if f'href="{t}' in html or f"href='{t}" in html:
+                linked.add(t)
+    dead = [t for t in sorted(linked) if ctx.head_status(t) in DEAD_STATUSES]
     if dead:
-        return _finding(record, f"{len(dead)} phantom link target(s) still 404: {dead}", [ctx.base + "/"])
+        return _finding(record, f"{len(dead)} phantom link target(s) still linked and 404: {dead}", [ctx.base + "/"])
     return None
 
 

@@ -75,47 +75,46 @@ jobs:
         # Runs even when the sweep step fails — findings logged before a
         # crash or an undelivered-alert exit must still persist.
         if: always()
+        env:
+          DES_SITE: ${{ matrix.site }}
         run: |
           git config user.name "des-bot"
           git config user.email "des-bot@users.noreply.github.com"
-          # bug-log.jsonl was untracked, so the old `git diff --quiet` gate
-          # never fired and the cloud log was thrown away after every run.
+          # Both matrix jobs (trw, aura) check out the run's TRIGGER SHA, so when
+          # trw commits + pushes mid-run, aura is still on the pre-run base. A
+          # textual `git pull --rebase` then collided on the end-of-file appends
+          # both jobs make, and the loser's run FAILED (2026-07-12, -15) — noisy
+          # even though the earlier guard kept the log uncorrupted.
           #
-          # ORDER MATTERS: pull BEFORE add. `git pull --rebase --autostash`
-          # pops the stash back UNSTAGED, so anything added earlier vanishes
-          # from the index and `git commit` dies on an empty index whenever
-          # origin moved mid-sweep (run 29171955477, 2026-07-12). Stage after
-          # the pull, and re-stage inside the retry loop for the same reason.
-          bail_if_unmerged() {
-            if git ls-files -u | grep -q .; then
-              echo "ERROR: rebase left bug-log.jsonl unmerged — refusing to stage conflict markers" >&2
-              git rebase --abort 2>/dev/null || true
-              exit 1
+          # Fix: never rebase text. Merge by RECORD OWNERSHIP instead — a sweep
+          # only changes its own site's records, so on every attempt we reset to
+          # the latest origin (other site's truth) and re-lay THIS site's records
+          # on top via reporters/merge_bug_log.py. That merge cannot conflict, so
+          # the only thing the retry loop races is the plain push.
+          if ! git status --porcelain -- bug-log.jsonl | grep -q .; then
+            echo "no bug-log changes to commit"; exit 0
+          fi
+          cp bug-log.jsonl "${RUNNER_TEMP:-/tmp}/bug-log.job.jsonl"
+          BR="${GITHUB_REF_NAME:-main}"
+          pushed=""
+          for i in 1 2 3 4 5; do
+            git fetch origin "$BR"
+            git reset --hard "origin/$BR"          # HEAD+tree = origin; job copy is safe in RUNNER_TEMP
+            python reporters/merge_bug_log.py \
+              --site "$DES_SITE" \
+              --origin bug-log.jsonl \
+              --job "${RUNNER_TEMP:-/tmp}/bug-log.job.jsonl" \
+              --out bug-log.jsonl
+            if git diff --quiet -- bug-log.jsonl; then
+              echo "merged log matches origin; nothing to commit"; pushed=1; break
             fi
-          }
-          if git status --porcelain -- bug-log.jsonl | grep -q .; then
-            git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
-            bail_if_unmerged
             git add bug-log.jsonl
-            if git diff --cached --quiet; then
-              echo "bug log matched origin after rebase; nothing to commit"
-              exit 0
-            fi
-            git commit -m "des: update bug log (${{ matrix.site }}) [skip ci]"
-            # Concurrent writers (other site's run, local dev pushes) — retry on
-            # non-fast-forward, fail LOUD if all retries lose (silent loss is
-            # what broke Jul 4-10).
-            pushed=""
-            for i in 1 2 3; do
-              if git push; then pushed=1; break; fi
-              git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
-              bail_if_unmerged
-              git add bug-log.jsonl
-              git diff --cached --quiet || git commit -m "des: update bug log (${{ matrix.site }}) [skip ci]" || true
-              sleep $((i * 5))
-            done
-            if [ -z "$pushed" ]; then
-              echo "ERROR: bug-log push failed after 3 attempts" >&2
-              exit 1
-            fi
+            git commit -m "des: update bug log (${DES_SITE}) [skip ci]"
+            if git push; then pushed=1; break; fi
+            echo "push rejected (attempt $i), re-merging onto latest origin"
+            sleep $((i * 5))
+          done
+          if [ -z "$pushed" ]; then
+            echo "ERROR: bug-log push failed after 5 attempts" >&2
+            exit 1
           fi

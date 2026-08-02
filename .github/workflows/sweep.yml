@@ -121,7 +121,7 @@ jobs:
               --out alert-queue.jsonl
             python reporters/html_report.py --prune --site "$DES_SITE" --keep 10
             git add bug-log.jsonl alert-queue.jsonl
-            git add -A reports/
+            [ -d reports ] && git add -A reports/
             if git diff --cached --quiet; then
               echo "merged state matches origin; nothing to commit"; pushed=1; break
             fi

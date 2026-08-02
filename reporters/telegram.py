@@ -157,7 +157,7 @@ def format_critical(finding, report_url=None):
     urls = finding.get("urls", [])
     in_charge = evidence.escape_html(finding.get("in_charge", ""))
     lines = [
-        f"<b>{emoji} [DES] CRITICAL — {title}</b>",
+        f"<b>{emoji} [DES] CRITICAL: {title}</b>",
         f"Site: {evidence.escape_html(site)} | Severity: critical | Affected: {len(urls)} pages",
         summary,
         "Top URLs:",
@@ -179,7 +179,7 @@ def format_high(finding, report_url=None):
     urls = finding.get("urls", [])
     in_charge = evidence.escape_html(finding.get("in_charge", ""))
     lines = [
-        f"<b>{emoji} [DES] HIGH — {title}</b>",
+        f"<b>{emoji} [DES] HIGH: {title}</b>",
         f"Site: {evidence.escape_html(site)} | Severity: high | Affected: {len(urls)} pages",
         summary,
         "Top URLs:",
@@ -198,7 +198,7 @@ def format_digest(findings, severity_label, site, period_label, report_url=None)
         return None
     emoji = _emoji(site)
     header = (
-        f"<b>{emoji} [DES] {severity_label.upper()} DIGEST — {evidence.escape_html(site)} "
+        f"<b>{emoji} [DES] {severity_label.upper()} DIGEST: {evidence.escape_html(site)} "
         f"({period_label})</b>\n{len(findings)} finding(s)\n"
     )
     lines = []

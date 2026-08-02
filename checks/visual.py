@@ -4,6 +4,8 @@ dict or None.
 """
 from urllib.parse import urlparse
 
+from reporters import evidence
+
 MAROON_RGB_PATTERNS = [
     "rgb(122, 31, 31)", "rgb(112, 26, 26)", "#7a1f1f", "#701a1a",
 ]
@@ -181,7 +183,9 @@ async def check_mobile_menu(page):
     }""")
     if bad:
         sev = "critical" if bad.get("issue") in ("menu_did_not_open", "no_hamburger", "no_drawer") else "high"
-        return {"check": "mobile_menu", "severity": sev, "evidence": bad}
+        return {"check": "mobile_menu", "severity": sev,
+                "evidence": evidence.humanize(bad),
+                "details": [evidence.humanize(s) for s in (bad.get("samples") or [])][:3]}
     return None
 
 

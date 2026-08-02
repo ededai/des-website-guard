@@ -69,6 +69,7 @@ def log_finding(finding):
         e["url_count"] = len(finding["urls"])
         e["url_list"] = finding["urls"][:50]
         e["evidence"] = str(finding.get("evidence", ""))[:1900]
+        e["details"] = [str(d)[:400] for d in (finding.get("details") or [])][:5]
         _save(entries)
         return str(_path())
     status, severity, first_seen = "open", finding["severity"], now
@@ -89,6 +90,7 @@ def log_finding(finding):
         "url_list": finding["urls"][:50],
         "check_id": finding.get("check_id", ""),
         "evidence": str(finding.get("evidence", ""))[:1900],
+        "details": [str(d)[:400] for d in (finding.get("details") or [])][:5],
         "screenshots": finding.get("screenshots", []),
         "MTTR_hours": None,
     })
@@ -102,6 +104,11 @@ def log_finding(finding):
 # issues the harness never re-checks.
 HARNESS_CHECK_IDS = {
     "load_failed", "http_5xx", "http_4xx_dead_page", "http_4xx_access_blocked",
+    # Crawl-health ids (src/crawl_guard.py). Both are transient by nature and
+    # MUST be able to auto-close: a bot challenge that has passed should not sit
+    # open forever. Safe to reconcile because reconcile() itself is now gated on
+    # guard.reconcile_is_safe(), so a still-blocked sweep never reaches it.
+    "crawl_blocked", "sweep_aborted_bot_challenge",
     "sweep_page_crash", "missing_nav", "missing_footer", "missing_required_nav_link",
     "maroon_leak", "broken_images", "console_errors", "mobile_menu", "dead_buttons",
     "em_dash", "autop_injection", "missing_byline", "missing_unit_number",

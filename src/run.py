@@ -56,7 +56,7 @@ def _console_noise(text, extra_patterns):
     return any(p in text for p in CONSOLE_IGNORE_PATTERNS) or any(p in text for p in (extra_patterns or []))
 
 
-async def _goto_with_backoff(page, url, guard):
+async def _goto_with_backoff(page, url, guard, captured_errors=None):
     """Navigate, and if the edge bot-challenges us, back off and retry once
     before believing it. Returns (status, html, verdict, evidence).
 
@@ -81,6 +81,14 @@ async def _goto_with_backoff(page, url, guard):
             return status, html, verdict, evidence
         await guard.backoff(attempt, url=url, evidence=evidence)
         attempt += 1
+        # The challenge interstitial runs its OWN scripts on this same page
+        # object, and the pageerror/console listeners were attached before the
+        # first goto. Without this reset the retried (clean, 200) load inherits
+        # the challenge page's exceptions and reports a phantom HIGH
+        # `console_errors` — a challenged page leaking a high finding is exactly
+        # what this module exists to prevent.
+        if captured_errors is not None:
+            captured_errors.clear()
 
 
 async def render_and_check(playwright, url, site, viewports, guard):
@@ -118,7 +126,8 @@ async def render_and_check(playwright, url, site, viewports, guard):
             )
 
             try:
-                status, html, verdict, http_evidence = await _goto_with_backoff(page, url, guard)
+                status, html, verdict, http_evidence = await _goto_with_backoff(
+                    page, url, guard, captured_errors=captured_errors)
             except Exception as e:
                 findings_per_viewport.setdefault(vp_name, []).append({"url": url, "viewport": vp_name, "check": "load_failed", "severity": "critical", "evidence": str(e)})
                 await ctx.close()
@@ -250,6 +259,11 @@ def dedupe(all_findings, site_name, in_charge):
             "summary": ev[:200],
             "urls": [],
             "evidence": ev,
+            # Raw per-page detail (e.g. the actual console message text). The
+            # summary counts things; this says WHAT. Without it a
+            # "1 JS console errors" finding cannot be triaged without re-running
+            # the sweep — which is how a console_errors HIGH went undiagnosed.
+            "details": list(f.get("details") or [])[:5],
             "first_seen": datetime.now(timezone.utc).isoformat(),
             "status": "open",
         })
@@ -264,6 +278,9 @@ def dedupe(all_findings, site_name, in_charge):
         if ev and ev not in g["evidence"]:
             g["evidence"] = f"{g['evidence']}; {ev}"
             g["summary"] = g["evidence"][:200]
+        for d in (f.get("details") or []):
+            if d not in g["details"] and len(g["details"]) < 5:
+                g["details"].append(d)
     return list(grouped.values())
 
 
@@ -300,6 +317,8 @@ def route(finding, dry_run=False):
     if dry_run:
         urls_preview = "\n  ".join(finding["urls"][:20])
         print(f"[DRY-RUN] {sev.upper()} — {finding['title']} ({len(finding['urls'])} URLs)\n  {urls_preview}\n  evidence: {finding.get('evidence','')[:120]}")
+        for d in finding.get("details") or []:
+            print(f"  detail: {str(d)[:200]}")
         return
     if sev == "critical":
         telegram.send(telegram.format_critical(finding))

@@ -98,6 +98,15 @@ chrome_exempt_paths:
   - /privacy/
   - /terms/
 
+# --- Crawl politeness / bot-challenge guard (see src/crawl_guard.py) ---------
+# 2026-08-02: an unthrottled sweep got 403'd on 159 URLs mid-run and Des then
+# ran DOM checks against the challenge pages, emitting 159 fake CRITICALs.
+# Pace the crawl, and if more than crawl_abort_ratio of pages come back
+# challenged, abort with a single report instead of per-page findings.
+crawl_delay_seconds: 1.5
+crawl_abort_ratio: 0.20
+crawl_abort_min_pages: 10
+
 # Tracked in the bug log with full lifecycle, but never sent in Telegram digests
 # (Ed, 2026-07-12: stop pinging em-dash digests; the log + auto-close still run).
 digest_mute_checks:

@@ -60,6 +60,11 @@ byline_exempt_paths: []
 
 waivers: []
 
+# Crawl politeness / bot-challenge guard (see src/crawl_guard.py)
+crawl_delay_seconds: 1.5
+crawl_abort_ratio: 0.20
+crawl_abort_min_pages: 10
+
 # Tracked in the bug log with full lifecycle, but never sent in Telegram digests
 # (Ed, 2026-07-12: stop pinging em-dash digests; the log + auto-close still run).
 digest_mute_checks:

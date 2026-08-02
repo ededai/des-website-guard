@@ -28,6 +28,7 @@ sys.path.insert(0, str(ROOT))
 
 from src.devices import DEVICES
 from src.sitemap import discover_urls, filter_skip
+from src import crawl_guard
 from checks import content_rules, visual, recheck
 from reporters import telegram, bug_log
 
@@ -55,9 +56,42 @@ def _console_noise(text, extra_patterns):
     return any(p in text for p in CONSOLE_IGNORE_PATTERNS) or any(p in text for p in (extra_patterns or []))
 
 
-async def render_and_check(playwright, url, site, viewports):
-    """Open URL across viewports. Run check battery. Return list of findings."""
+async def _goto_with_backoff(page, url, guard):
+    """Navigate, and if the edge bot-challenges us, back off and retry once
+    before believing it. Returns (status, html, verdict, evidence).
+
+    Most 403s under a sweep are self-inflicted rate limiting, not a site fault —
+    so we give the host room to breathe before writing anything down."""
+    attempt = 0
+    while True:
+        # Use "commit" + DOMContentLoaded fallback so slow third-party CSS
+        # bundles (Jetpack Boost, gtag, stats.wp.com) don't make the sweep
+        # timeout on otherwise-healthy pages.
+        resp = await page.goto(url, wait_until="commit", timeout=30000)
+        status = resp.status if resp else None
+        try:
+            await page.wait_for_load_state("domcontentloaded", timeout=20000)
+        except Exception:
+            pass
+        # Give inline scripts a moment to execute so pageerror handlers fire
+        await page.wait_for_timeout(2000)
+        html = await page.content()
+        verdict, evidence = crawl_guard.classify_response(status, html)
+        if verdict != "blocked" or attempt >= guard.max_retries:
+            return status, html, verdict, evidence
+        await guard.backoff(attempt, url=url, evidence=evidence)
+        attempt += 1
+
+
+async def render_and_check(playwright, url, site, viewports, guard):
+    """Open URL across viewports. Run check battery. Return dict of findings.
+
+    A crawl-blocked page (bot challenge / non-200) short-circuits every viewport:
+    no DOM, visual or content check may run against a page we never actually
+    saw. See src/crawl_guard.py for the 2026-08-02 false-positive post-mortem."""
     findings_per_viewport = {}
+    page_blocked = False
+    blocked_evidence = ""
     browser = await playwright.chromium.launch(headless=True)
     try:
         for vp_name in viewports:
@@ -84,41 +118,38 @@ async def render_and_check(playwright, url, site, viewports):
             )
 
             try:
-                # Use "commit" + DOMContentLoaded fallback so slow third-party
-                # CSS bundles (Jetpack Boost, gtag, stats.wp.com) don't make
-                # the sweep timeout on otherwise-healthy pages.
-                resp = await page.goto(url, wait_until="commit", timeout=30000)
-                status = resp.status if resp else None
-                try:
-                    await page.wait_for_load_state("domcontentloaded", timeout=20000)
-                except Exception:
-                    pass
-                # Give inline scripts a moment to execute so pageerror handlers fire
-                await page.wait_for_timeout(2000)
+                status, html, verdict, http_evidence = await _goto_with_backoff(page, url, guard)
             except Exception as e:
                 findings_per_viewport.setdefault(vp_name, []).append({"url": url, "viewport": vp_name, "check": "load_failed", "severity": "critical", "evidence": str(e)})
                 await ctx.close()
                 continue
 
-            if status and status >= 500:
-                findings_per_viewport.setdefault(vp_name, []).append({"url": url, "viewport": vp_name, "check": "http_5xx", "severity": "critical", "evidence": f"HTTP {status}"})
+            # --- Crawl-health gate -------------------------------------------
+            # Nothing below this line may run against a page we did not really
+            # receive. A bot-challenge body has no nav, no footer and no mobile
+            # drawer; judging it produces false criticals (2026-08-02: 159 of
+            # them on TRW). Blocked pages roll up into ONE medium finding.
+            if verdict == "blocked":
+                page_blocked = True
+                blocked_evidence = http_evidence
+                findings_per_viewport.setdefault(vp_name, []).append({
+                    "url": url, "viewport": vp_name, "check": "crawl_blocked",
+                    "severity": "medium",
+                    "evidence": f"{http_evidence} — all DOM/visual/content checks skipped for this URL",
+                })
+                await ctx.close()
+                break  # don't hammer a host that is already refusing us
+            if verdict == "server_error":
+                findings_per_viewport.setdefault(vp_name, []).append({"url": url, "viewport": vp_name, "check": "http_5xx", "severity": "critical", "evidence": http_evidence})
                 await ctx.close()
                 continue
-            if status and status >= 400:
+            if verdict == "dead":
                 # 404/410 on a sitemap-published URL is a dead page Google is
-                # being told to index — high. 403/429 under a fast headless
-                # crawl is usually a Cloudflare/bot challenge, not a site bug —
-                # medium, so it surfaces without paging anyone at 3am.
-                if status in (404, 410):
-                    f = {"check": "http_4xx_dead_page", "severity": "high", "evidence": f"HTTP {status} on sitemap URL"}
-                else:
-                    f = {"check": "http_4xx_access_blocked", "severity": "medium", "evidence": f"HTTP {status} (possible bot challenge under crawl)"}
-                f.update({"url": url, "viewport": vp_name})
-                findings_per_viewport.setdefault(vp_name, []).append(f)
+                # being told to index — genuine high, and still no DOM checks.
+                findings_per_viewport.setdefault(vp_name, []).append({"url": url, "viewport": vp_name, "check": "http_4xx_dead_page", "severity": "high", "evidence": http_evidence})
                 await ctx.close()
                 continue
 
-            html = await page.content()
             findings = []
 
             # html-level checks (site-agnostic battery)
@@ -189,8 +220,12 @@ async def render_and_check(playwright, url, site, viewports):
 
             findings_per_viewport[vp_name] = findings
             await ctx.close()
+            # Small inter-viewport pause: 5 viewports per URL is 5 requests to
+            # the same host, which is what tripped the 2026-08-02 challenge.
+            await guard.polite_pause(scale=0.34)
     finally:
         await browser.close()
+    guard.record(url, page_blocked, blocked_evidence)
     return findings_per_viewport
 
 
@@ -305,6 +340,8 @@ async def main():
     ap.add_argument("--tier", choices=["critical", "weekly", "deep"], default="critical")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--limit", type=int, default=None, help="cap URLs for testing")
+    ap.add_argument("--delay", type=float, default=None,
+                    help="seconds to pause between requests (default: site crawl_delay_seconds, else 1.5)")
     args = ap.parse_args()
 
     site = load_site(args.site)
@@ -346,21 +383,37 @@ async def main():
         urls = urls[: args.limit]
 
     viewports = ["desktop"] if args.tier == "critical" else list(DEVICES.keys())
-    print(f"DES: scanning {len(urls)} URLs on {len(viewports)} viewports — {args.tier}")
+
+    # Politeness + crawl-health guard. Defaults are deliberately gentle: Des is
+    # a monitor, not a load test, and a challenged crawl produces garbage
+    # findings (see src/crawl_guard.py). Tunable per site in sites/<site>.yaml.
+    guard = crawl_guard.SweepGuard(
+        delay=args.delay if args.delay is not None else float(site.get("crawl_delay_seconds", 1.5)),
+        abort_ratio=float(site.get("crawl_abort_ratio", 0.20)),
+        min_pages=int(site.get("crawl_abort_min_pages", 10)),
+    )
+    print(f"DES: scanning {len(urls)} URLs on {len(viewports)} viewports — {args.tier} "
+          f"(delay {guard.delay}s, abort at >{guard.abort_ratio:.0%} blocked)")
 
     from playwright.async_api import async_playwright
     all_findings = []
     async with async_playwright() as pw:
-        for u in urls:
+        for idx, u in enumerate(urls):
+            if idx:
+                await guard.polite_pause()
             # Fault isolation: one exploding page must not discard the whole
             # sweep's findings (previously a single crash lost everything).
             try:
-                per_vp = await render_and_check(pw, u, site, viewports)
+                per_vp = await render_and_check(pw, u, site, viewports, guard)
             except Exception as e:
                 all_findings.append({"url": u, "viewport": "n/a", "check": "sweep_page_crash", "severity": "high", "evidence": f"render_and_check raised: {e}"})
                 continue
             for vp, fs in per_vp.items():
                 all_findings.extend(fs)
+            # Systematically challenged: everything gathered so far is suspect.
+            if guard.should_abort():
+                print(f"DES: ABORTING sweep — {guard.pages_blocked}/{guard.pages_attempted} pages bot-challenged")
+                break
 
         # Curated-finding recheck (Des v2). Re-test the open curated bugs from
         # the manual deep audit whose check_ids the normal battery never emits,
@@ -372,12 +425,19 @@ async def main():
         # land in current_check_ids so reconcile leaves still-broken ones open.
         # A crashed/unverifiable recheck emits a low keep-open finding, never a
         # silent absence — so reconcile can't false-close a bug we didn't verify.
-        if not args.dry_run and not args.limit:
+        if not args.dry_run and not args.limit and not guard.aborted:
             open_curated = bug_log.open_records(site["name"], set(recheck.REGISTRY))
             if open_curated:
                 print(f"DES: rechecking {len(open_curated)} open curated finding(s)")
                 rc_findings = await recheck.run_site_rechecks(pw, site, open_curated, urls)
                 all_findings.extend(rc_findings)
+
+    # An aborted sweep reports ONE fact: we were bot-challenged and saw nothing
+    # we can trust. Everything gathered before the abort is discarded rather
+    # than shipped — partial data from a challenged crawl is how 159 fake
+    # criticals got sent on 2026-08-02.
+    if guard.aborted:
+        all_findings = [guard.abort_finding(site["url"])]
 
     findings = dedupe(all_findings, site["name"], site["in_charge"])
     findings.sort(key=lambda f: {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(f["severity"], 9))
@@ -402,8 +462,13 @@ async def main():
                  mute=set(site.get("digest_mute_checks") or []))
 
     # Lifecycle: close issues that stopped firing (full sweeps only — a
-    # --limit run hasn't seen every page and must not mass-close).
-    if not args.dry_run and not args.limit:
+    # --limit run hasn't seen every page and must not mass-close). A sweep that
+    # was crawl-blocked on any meaningful share of pages must not close either:
+    # a bug on a page we never loaded is not a bug that got fixed.
+    if not args.dry_run and not args.limit and not guard.reconcile_is_safe():
+        print(f"DES: skipping reconcile — {guard.pages_blocked}/{guard.pages_attempted} pages crawl-blocked "
+              f"({guard.blocked_ratio:.0%}); cannot distinguish 'fixed' from 'not seen'")
+    elif not args.dry_run and not args.limit:
         closed = bug_log.reconcile(site["name"], {f["check_id"] for f in findings})
         if closed:
             print(f"DES: {len(closed)} issue(s) auto-closed as fixed: {', '.join(closed)}")

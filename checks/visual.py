@@ -98,6 +98,22 @@ async def check_mobile_menu(page):
       - 2026-05-02 — /brands-we-service/ drawer had no id, the older
         `getElementById('mobileNav')` lookup returned null. Hamburger ran but
         toggled nothing visible.
+
+    SELECTOR CONTRACT (feedback_trw_mobile_menu_universal.md) — this check must
+    recognise BOTH generations of TRW chrome, because a selector rename is not a
+    broken menu:
+      - legacy: button `.nav-hamburger` / `#navHamburger`, drawer `.mobile-nav`
+        / `#mobileNav`
+      - chrome v5: button `.burger` / `#trwBurger`, drawer `.mmenu` / `#trwMmenu`
+    2026-08-02: chrome v5 shipped `#trwBurger` / `#trwMmenu`; neither matched
+    the old selector list ("burger" does not contain "hamburger", "mmenu" does
+    not contain "mobile-nav"), so Des reported CRITICAL `no_drawer` on 159 live,
+    working pages.
+
+    v5 also nests its visible surface: `#trwMmenu` is a transparent full-screen
+    overlay and the cream panel is `.mmenu .panel`. The background check must
+    look at the painted panel, not the overlay root, or every v5 page reads as
+    `drawer_invisible`.
     """
     bad = await page.evaluate("""async () => {
         const isMaroonish = (rgb) => {
@@ -108,26 +124,39 @@ async def check_mobile_menu(page):
             if (Math.abs(r-217)<8 && Math.abs(g-78)<8 && Math.abs(b-32)<8) return false;
             return r >= 100 && g < 60 && b < 60 && r > g+30 && r > b+30;
         };
-        const btn = document.getElementById('navHamburger')
+        // Burger: chrome v5 ids first, then legacy ids, then generic classes.
+        const btn = document.getElementById('trwBurger')
+                 || document.getElementById('navHamburger')
                  || document.getElementById('trwNavHamburger')
-                 || document.querySelector('.nav-hamburger, .hamburger, .menu-toggle, .nav-toggle, button[aria-label*="menu" i], [class*="hamburger"], [class*="menu-btn"]');
+                 || document.querySelector('.burger, .nav-hamburger, .hamburger, .menu-toggle, .nav-toggle, button[aria-label*="menu" i], [class*="burger"], [class*="hamburger"], [class*="menu-btn"]');
         if (!btn) return { issue: 'no_hamburger' };
-        // Capture pre-click state
-        const nav = document.getElementById('mobileNav')
-                 || document.querySelector('.mobile-nav, [class*="mobile-nav"], [class*="drawer"], nav[class*="menu"]');
+        // Drawer: chrome v5 (#trwMmenu / .mmenu) and legacy (#mobileNav / .mobile-nav).
+        const nav = document.getElementById('trwMmenu')
+                 || document.getElementById('mobileNav')
+                 || document.querySelector('.mmenu, .mobile-nav, [class*="mmenu"], [class*="mobile-nav"], [class*="drawer"], nav[class*="menu"]');
         if (!nav) return { issue: 'no_drawer' };
         btn.click();
-        await new Promise(r => setTimeout(r, 120));
+        await new Promise(r => setTimeout(r, 150));
         const cs = getComputedStyle(nav);
-        const opened = nav.classList.contains('open') && cs.display !== 'none';
-        if (!opened) return { issue: 'menu_did_not_open', display: cs.display };
-        // Drawer should have a visible bg (not transparent)
-        const bgM = cs.backgroundColor.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([\\d.]+))?/);
+        // v5 sets .open; other generations flip aria-hidden. Either counts, as
+        // long as the drawer is actually rendered.
+        const rect = nav.getBoundingClientRect();
+        const flagged = nav.classList.contains('open') || nav.getAttribute('aria-hidden') === 'false';
+        const rendered = cs.display !== 'none' && cs.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+        if (!(flagged && rendered)) {
+            return { issue: 'menu_did_not_open', display: cs.display, cls: nav.className, ariaHidden: nav.getAttribute('aria-hidden') };
+        }
+        // Background check runs on the PAINTED surface. In chrome v5 the drawer
+        // root is a transparent overlay and `.panel` carries the cream fill —
+        // testing the root would flag every v5 page as invisible.
+        const painted = nav.querySelector('.panel, .mmenu-panel, .drawer-panel, .mobile-nav-inner') || nav;
+        const pcs = getComputedStyle(painted);
+        const bgM = pcs.backgroundColor.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([\\d.]+))?/);
         if (bgM) {
             const a = bgM[4] === undefined ? 1 : +bgM[4];
             const lightish = +bgM[1] >= 200 && +bgM[2] >= 200 && +bgM[3] >= 200;
             if (a < 0.5 || (!lightish && a >= 0.5)) {
-                return { issue: 'drawer_invisible', bg: cs.backgroundColor };
+                return { issue: 'drawer_invisible', bg: pcs.backgroundColor, on: painted.className || painted.tagName };
             }
         }
         const maroon = [];

@@ -7,3 +7,4 @@ baselines/*/screenshots/
 .DS_Store
 *.log
 .gstack/
+.des-shots/

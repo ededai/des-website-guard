@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parent.parent
 SHOT_DIR = Path(os.environ.get("DES_SHOT_DIR", ROOT / ".des-shots"))
 
-# Repo/Telegram bloat cap — one alert-worth of evidence per sweep is enough;
+# Repo/Telegram bloat cap: one alert-worth of evidence per sweep is enough;
 # a runaway sweep must not fill the report/queue with dozens of JPEGs.
 MAX_SHOTS_PER_SWEEP = 12
 
@@ -34,7 +34,7 @@ _cap_notice_shown = False
 
 
 def reset():
-    """Test hook — resets the module-level shot counter and cap notice."""
+    """Test hook. Resets the module-level shot counter and cap notice."""
     global _taken, _cap_notice_shown
     _taken = 0
     _cap_notice_shown = False
@@ -48,12 +48,12 @@ def _slugify(url):
 async def capture_alert_shot(page, url, viewport):
     """Capture a viewport-sized JPEG of `page` for a critical/high finding.
     Returns the file path, or None once the per-sweep cap is hit or on any
-    capture failure — a screenshot problem must never fail a sweep or lose
+    capture failure. A screenshot problem must never fail a sweep or lose
     the underlying finding."""
     global _taken, _cap_notice_shown
     if _taken >= MAX_SHOTS_PER_SWEEP:
         if not _cap_notice_shown:
-            print(f"DES: screenshot cap reached ({MAX_SHOTS_PER_SWEEP}/sweep) — "
+            print(f"DES: screenshot cap reached ({MAX_SHOTS_PER_SWEEP}/sweep), "
                   f"further alerts ship without a photo")
             _cap_notice_shown = True
         return None
@@ -67,7 +67,7 @@ async def capture_alert_shot(page, url, viewport):
         await page.wait_for_timeout(1500)
         slug = _slugify(url)
         f = SHOT_DIR / f"{slug}-{viewport}-{_taken}.jpg"
-        # Viewport-sized (full_page defaults False) — a full-page capture of
+        # Viewport-sized (full_page defaults False). A full-page capture of
         # a 12k-pixel article is what would blow the sendPhoto limit and the
         # report size.
         await page.screenshot(path=str(f), type="jpeg", quality=60)

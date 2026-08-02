@@ -1,7 +1,7 @@
 """
-Unit tests for reporters/alert_queue.py — cross-run persisted HIGH queue with
+Unit tests for reporters/alert_queue.py: cross-run persisted HIGH queue with
 the 08:00 SGT flush window. Uses DES_ALERT_QUEUE pointing at tmp_path and a
-fake send_fn that records calls — no network.
+fake send_fn that records calls. No network.
 
     ./.venv/bin/python -m pytest tests/test_alert_queue.py
 """

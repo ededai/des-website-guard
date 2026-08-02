@@ -1,5 +1,5 @@
 """
-Unit tests for reporters/evidence.py — the single pipeline-boundary evidence
+Unit tests for reporters/evidence.py: the single pipeline-boundary evidence
 formatter (C-EVID). No network, no browser.
 
     ./.venv/bin/python -m pytest tests/test_evidence.py

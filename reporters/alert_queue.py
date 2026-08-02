@@ -1,7 +1,7 @@
 """
 Cross-run persisted HIGH-severity alert queue (D-04).
 
-HIGH findings are never sent immediately — they're appended here and drained
+HIGH findings are never sent immediately. They're appended here and drained
 by flush_due() on the next sweep (any site, any tier) that runs inside the
 08:00-22:00 SGT business-hours window, so Ed is not woken by a 03:00 alert.
 
@@ -62,7 +62,7 @@ def in_window(now=None):
 
 def enqueue(site, severity, check_id, text, screenshot=None):
     """Append one queued alert record. `site` must match the sites/*.yaml
-    `name` value — merge_bug_log.py keys off it during the sweep.yml commit
+    `name` value; merge_bug_log.py keys off it during the sweep.yml commit
     step, the same way it already does for bug-log.jsonl."""
     entries = _load()
     entries.append({
@@ -79,7 +79,7 @@ def enqueue(site, severity, check_id, text, screenshot=None):
 def flush_due(site, send_fn, send_photo_fn=None, now=None):
     """Send every queued record for `site` if we're inside the 08:00-22:00
     SGT window; otherwise leave the file untouched and return 0. A record is
-    dropped ONLY when its send returns truthy — a failed send stays queued
+    dropped ONLY when its send returns truthy. A failed send stays queued
     (and the caller's own UNDELIVERED tracking, via send_fn/send_photo_fn,
     fails the run). Every other site's records are rewritten back unchanged."""
     if not in_window(now):

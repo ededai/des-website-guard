@@ -1,4 +1,4 @@
-# Des — Website Guard
+# Des: Website Guard
 
 Proactive site-wide post-publish QA sweeper for all of Ed's websites (TRW, AURA, future). Strict report-only.
 
@@ -12,9 +12,11 @@ Skill: `~/.claude/skills/des-website-guard/SKILL.md`
 - Runs a battery of checks: visual / functional (button clicks) / content / SEO / CWV / TRW-specific
 - De-duplicates findings (same bug across N pages = 1 report with URL list)
 - Routes by severity:
-  - **Critical** → Telegram (24/7) + Claude session + Notion log
-  - **High** → Telegram (queued to 08:00 SGT) + Claude session + Notion log
-  - **Medium / Low** → Notion log only
+  - **Critical** → Telegram photo + caption + report link, 24/7
+  - **High** → queued in `alert-queue.jsonl`, flushed at 08:00 SGT
+  - **Medium** → end-of-sweep Telegram digest
+  - **Low** → deep-tier bi-weekly digest
+  - **Everything** → `bug-log.jsonl` + the per-sweep HTML report
 - Auto-closes bugs that no longer reproduce on next sweep; bumps severity on re-opens
 
 ## Cadence (SGT)
@@ -23,16 +25,16 @@ Skill: `~/.claude/skills/des-website-guard/SKILL.md`
 |---|---|---|
 | Daily critical | `0 0 * * *` | Top 20 pages, critical only |
 | Weekly critical | `0 22 * * 0` (Mon 06:00 SGT) | Full sitemap, critical + high |
-| Bi-weekly deep | `0 15 */14 * *` (Sun 23:00 SGT) | Full sitemap, all viewports, all checks |
+| Bi-weekly deep | `0 15 1,15 * *` (1st + 15th, 23:00 SGT) | Full sitemap, all viewports, all checks |
 
 ## Sites registered
 
-See `sites/` — one config file per site.
+See `sites/` for one config file per site.
 
 | Site | Config | In-charge |
 |---|---|---|
 | TRW | `sites/trw.yaml` | Bryan (via Codi) |
-| AURA | `sites/aura.yaml` (placeholder until rebuild ~2026-05-06) | Codi |
+| AURA | `sites/aura.yaml` | Codi |
 
 ## Local dev
 
@@ -43,6 +45,8 @@ playwright install chromium
 python -m src.run --site=trw --tier=critical --dry-run
 ```
 
+A dry-run prints every finding, its screenshot path (if one was captured), and builds the HTML report without sending anything to Telegram.
+
 ## Hosting
 
 GitHub Actions cron in `ededai/des-website-guard`. Same model as `ededai/trw-ig-scheduler`. Mac can be off.
@@ -50,17 +54,24 @@ GitHub Actions cron in `ededai/des-website-guard`. Same model as `ededai/trw-ig-
 Secrets required:
 - `TELEGRAM_BOT_TOKEN` (reuse TRW bot)
 - `TELEGRAM_CHAT_ID` (reuse TRW chat)
-- `NOTION_TOKEN`
-- `NOTION_DES_DB_ID` (Des — Website Bug Log)
+
+## Reporting
+
+- `reporters/evidence.py`: the single pipeline-boundary formatter (`humanize()` / `escape_html()`) that turns any check's evidence (string, dict, list) into safe, readable text. No finding evidence reaches Telegram, the bug log, or the HTML report without going through it first.
+- `reporters/telegram.py`: HTML-mode sender with per-site emoji headers, 4096-char message splitting, and `sendPhoto` for critical/high alerts with a screenshot.
+- `reporters/alert_queue.py`: cross-run persisted HIGH-severity queue (`alert-queue.jsonl`), flushed at 08:00-22:00 SGT so a HIGH found at 03:00 doesn't wake anyone.
+- `reporters/screenshot.py`: reveal-safe, capped viewport JPEG capture for critical/high findings during the live sweep.
+- `reporters/html_report.py`: builds the self-contained per-sweep HTML report and prunes old ones.
+- `reporters/bug_log.py`: the audit-trail JSONL log with a full open/fixed/reopened lifecycle.
+
+## Reports
+
+Every sweep writes one self-contained HTML report to `reports/<site>/<timestamp>-<tier>.html`. It embeds every finding screenshot as base64, so it opens offline with zero external requests. The last 10 reports per site are kept; older ones are pruned in the same commit as the new one. Every Telegram alert links to the report for that sweep.
 
 ## Severity routing
 
 Authoritative definitions live in `~/.claude/skills/des-website-guard/SKILL.md`. Edit there, not here.
 
-## Reporting templates
-
-`reporters/templates/` — Telegram + Notion + Claude session formats. Don't change without updating SKILL.md.
-
 ## Status
 
-Scaffolded 2026-04-30. First sweep pending repo creation + secret config + first-run baseline.
+Both sites sweeping on cron (daily critical, weekly critical+high, bi-weekly deep). `bug-log.jsonl` is the audit trail; the per-sweep HTML report under `reports/` is the visual record.

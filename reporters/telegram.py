@@ -102,7 +102,7 @@ def send(text, parse_mode="HTML"):
             )
             r.raise_for_status()
         except requests.RequestException as e:
-            # Do NOT print the exception or URL — both can contain the bot token,
+            # Do NOT print the exception or URL: both can contain the bot token,
             # and Actions logs are public. Status code + reason only.
             status = getattr(getattr(e, "response", None), "status_code", "n/a")
             UNDELIVERED.append(text)
@@ -123,7 +123,7 @@ def _truncate_caption(text, limit=MAX_CAPTION):
 def send_photo(image_path, caption, parse_mode="HTML"):
     """POST sendPhoto with a caption capped at MAX_CAPTION on a line boundary.
     Any failure (missing credentials, missing file, request error) falls back
-    to send(caption) so evidence is never silently lost — UNDELIVERED is only
+    to send(caption) so evidence is never silently lost. UNDELIVERED is only
     recorded if that fallback also fails. A truncated caption's remainder is
     sent as a follow-up send() call."""
     head, rest = _truncate_caption(caption, MAX_CAPTION)
@@ -170,7 +170,7 @@ def format_critical(finding, report_url=None):
 
 
 def format_high(finding, report_url=None):
-    # Top URLs included since 2026-07-10 — a high alert without page names
+    # Top URLs included since 2026-07-10: a high alert without page names
     # cost a full site re-scan to locate the 7 autop pages.
     site = finding.get("site", "")
     emoji = _emoji(site)
@@ -193,7 +193,7 @@ def format_high(finding, report_url=None):
 
 
 def format_digest(findings, severity_label, site, period_label, report_url=None):
-    """Batched digest for medium/low — one Telegram message listing all findings."""
+    """Batched digest for medium/low: one Telegram message listing all findings."""
     if not findings:
         return None
     emoji = _emoji(site)

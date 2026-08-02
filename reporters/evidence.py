@@ -43,7 +43,7 @@ def humanize(ev, _depth=0):
         if _depth > 0:
             return out
 
-    # Final pass — only reached at depth 0.
+    # Final pass. Only reached at depth 0.
     out = " ".join(out.split())
     if len(out) > _MAX_LEN:
         out = out[:_MAX_LEN].rstrip() + "..."

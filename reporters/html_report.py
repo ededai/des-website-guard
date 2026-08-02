@@ -7,7 +7,7 @@ Race safety: each sweep writes a UNIQUE timestamped filename under its own
 site directory, so trw and aura never contend for a path. The report is
 untracked when sweep.yml's commit step runs `git reset --hard`, and
 reset --hard does not delete untracked files, so it survives. No merge logic
-is needed for reports — only for the tracked JSONL files.
+is needed for reports; only for the tracked JSONL files.
 """
 import base64
 import os
@@ -133,15 +133,15 @@ def build(site, tier, findings, sweep_started, out_rel, waived=(), aborted=False
 
     changed_rows = []
     for e in new:
-        changed_rows.append(f"<li class='new'>NEW &mdash; {esc(e.get('title',''))} ({esc(e.get('check_id',''))})</li>")
+        changed_rows.append(f"<li class='new'>NEW: {esc(e.get('title',''))} ({esc(e.get('check_id',''))})</li>")
     for e in fixed:
         mttr = e.get("MTTR_hours")
-        changed_rows.append(f"<li class='fixed'>FIXED &mdash; {esc(e.get('title',''))} (MTTR {esc(mttr)}h)</li>")
+        changed_rows.append(f"<li class='fixed'>FIXED: {esc(e.get('title',''))} (MTTR {esc(mttr)}h)</li>")
     for e in regressed:
-        changed_rows.append(f"<li class='regressed'>REGRESSED &mdash; {esc(e.get('title',''))}</li>")
+        changed_rows.append(f"<li class='regressed'>REGRESSED: {esc(e.get('title',''))}</li>")
     for e in still_open:
         changed_rows.append(
-            f"<li class='open'>STILL OPEN &mdash; {esc(e.get('title',''))} "
+            f"<li class='open'>STILL OPEN: {esc(e.get('title',''))} "
             f"({_days_open(e.get('first_seen'), sweep_end)}d open)</li>"
         )
 
@@ -167,7 +167,7 @@ ul {{ margin:4px 0; padding-left:20px; }}
 details summary {{ cursor:pointer; margin-top:16px; }}
 </style></head>
 <body>
-<h1>{esc(site)} &mdash; {esc(tier)} sweep report{" (ABORTED)" if aborted else ""}</h1>
+<h1>{esc(site)}: {esc(tier)} sweep report{" (ABORTED)" if aborted else ""}</h1>
 <p>Started: {sweep_started.isoformat()} | Ended: {sweep_end.isoformat()}</p>
 <p>Critical: {counts.get('critical',0)} | High: {counts.get('high',0)} | Medium: {counts.get('medium',0)} | Low: {counts.get('low',0)} | Waived: {len(waived_list)}</p>
 <h2>What changed since the last sweep</h2>
@@ -183,7 +183,7 @@ details summary {{ cursor:pointer; margin-top:16px; }}
 
 def prune(site, keep=KEEP_PER_SITE):
     """Delete all but the newest `keep` reports for `site` (sorted by
-    filename — the fixed-width timestamp format sorts chronologically).
+    filename; the fixed-width timestamp format sorts chronologically).
     Returns the deleted paths, relative to repo root."""
     d = REPORTS_DIR / str(site).lower()
     if not d.exists():

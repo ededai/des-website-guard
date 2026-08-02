@@ -3,10 +3,13 @@ Entrypoint. Crawl a site's sitemap, render every URL across viewports,
 run the check battery, de-dupe findings, route by severity, log to bug_log + Telegram.
 
 Severity routing:
-  critical: immediate Telegram + bug log
-  high:     immediate Telegram + bug log
+  critical: immediate Telegram (photo + caption when a screenshot exists) + bug log
+  high:     queued (reporters/alert_queue.py), flushed at 08:00-22:00 SGT + bug log
   medium:   bug log + end-of-sweep Telegram digest
   low:      bug log + bi-weekly Telegram digest (deep tier only)
+
+Every sweep also writes one self-contained HTML report (reporters/html_report.py),
+linked from every Telegram alert.
 
 Usage:
   python -m src.run --site=trw --tier=critical [--dry-run]
@@ -30,7 +33,7 @@ from src.devices import DEVICES
 from src.sitemap import discover_urls, filter_skip
 from src import crawl_guard
 from checks import content_rules, visual, recheck
-from reporters import telegram, bug_log
+from reporters import telegram, bug_log, evidence, alert_queue, screenshot, html_report
 
 
 def load_site(name):
@@ -91,7 +94,7 @@ async def _goto_with_backoff(page, url, guard, captured_errors=None):
             captured_errors.clear()
 
 
-async def render_and_check(playwright, url, site, viewports, guard):
+async def render_and_check(playwright, url, site, viewports, guard, capture=True):
     """Open URL across viewports. Run check battery. Return dict of findings.
 
     A crawl-blocked page (bot challenge / non-200) short-circuits every viewport:
@@ -228,6 +231,15 @@ async def render_and_check(playwright, url, site, viewports, guard):
                 findings.append(f)
 
             findings_per_viewport[vp_name] = findings
+            # Screenshot evidence for critical/high findings only (D-01). One
+            # shot per viewport is enough; the alert and the report share it.
+            # capture_alert_shot() never raises, so this cannot skip ctx.close().
+            if capture and any(f["severity"] in ("critical", "high") for f in findings):
+                shot = await screenshot.capture_alert_shot(page, url, vp_name)
+                if shot:
+                    for f in findings:
+                        if f["severity"] in ("critical", "high"):
+                            f["screenshot"] = shot
             await ctx.close()
             # Small inter-viewport pause: 5 viewports per URL is 5 requests to
             # the same host, which is what tripped the 2026-08-02 challenge.
@@ -243,13 +255,15 @@ SEV_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 
 def dedupe(all_findings, site_name, in_charge):
     """Group by check_id; one finding per check with affected URL list.
-    Evidence is str()-coerced (some checks return dict evidence — this
-    crashed every weekly/deep sweep from 2026-05-15 to 2026-07-03), and the
-    group takes the WORST severity seen, not whichever arrived first."""
+    Evidence is humanized at this pipeline boundary (reporters/evidence.py).
+    Some checks return dict evidence, which crashed every weekly/deep sweep
+    from 2026-05-15 to 2026-07-03 as a raw str() coercion, and could still
+    leak a Python repr into Telegram. The group takes the WORST severity
+    seen, not whichever arrived first."""
     grouped = {}
     for f in all_findings:
         key = f["check"]
-        ev = str(f.get("evidence", ""))
+        ev = evidence.humanize(f.get("evidence"))
         g = grouped.setdefault(key, {
             "title": key.replace("_", " ").title(),
             "check_id": key,
@@ -263,7 +277,9 @@ def dedupe(all_findings, site_name, in_charge):
             # summary counts things; this says WHAT. Without it a
             # "1 JS console errors" finding cannot be triaged without re-running
             # the sweep — which is how a console_errors HIGH went undiagnosed.
-            "details": list(f.get("details") or [])[:5],
+            "details": [evidence.humanize(d) for d in (f.get("details") or [])][:5],
+            # One screenshot per group; the alert and the report share it.
+            "screenshots": [],
             "first_seen": datetime.now(timezone.utc).isoformat(),
             "status": "open",
         })
@@ -279,8 +295,11 @@ def dedupe(all_findings, site_name, in_charge):
             g["evidence"] = f"{g['evidence']}; {ev}"
             g["summary"] = g["evidence"][:200]
         for d in (f.get("details") or []):
-            if d not in g["details"] and len(g["details"]) < 5:
-                g["details"].append(d)
+            dh = evidence.humanize(d)
+            if dh not in g["details"] and len(g["details"]) < 5:
+                g["details"].append(dh)
+        if f.get("screenshot") and not g["screenshots"]:
+            g["screenshots"].append(f["screenshot"])
     return list(grouped.values())
 
 
@@ -309,26 +328,34 @@ def is_waived(finding, waivers):
     return None
 
 
-def route(finding, dry_run=False):
-    """Immediate routing for critical/high. Medium/low collected for digest."""
+def route(finding, dry_run=False, report_url=None):
+    """Immediate routing for critical (photo when a screenshot exists). High
+    is never sent immediately: it's queued (reporters/alert_queue.py) and
+    drained at 08:00-22:00 SGT. Medium/low collected for digest."""
     sev = finding["severity"]
     if not dry_run:
         bug_log.log_finding(finding)
+    shot = (finding.get("screenshots") or [None])[0]
     if dry_run:
         urls_preview = "\n  ".join(finding["urls"][:20])
         print(f"[DRY-RUN] {sev.upper()} — {finding['title']} ({len(finding['urls'])} URLs)\n  {urls_preview}\n  evidence: {finding.get('evidence','')[:120]}")
         for d in finding.get("details") or []:
             print(f"  detail: {str(d)[:200]}")
+        if shot:
+            print(f"  screenshot: {shot}")
         return
     if sev == "critical":
-        telegram.send(telegram.format_critical(finding))
+        if shot:
+            telegram.send_photo(shot, telegram.format_critical(finding, report_url))
+        else:
+            telegram.send(telegram.format_critical(finding, report_url))
     elif sev == "high":
-        # in production this is gated to 08:00 SGT business hours; here always send
-        telegram.send(telegram.format_high(finding))
+        alert_queue.enqueue(finding["site"], "high", finding["check_id"],
+                             telegram.format_high(finding, report_url), screenshot=shot)
     # medium / low handled in send_digests() after the sweep finishes
 
 
-def send_digests(findings, site_name, tier, dry_run=False, mute=()):
+def send_digests(findings, site_name, tier, dry_run=False, mute=(), report_url=None):
     """Emit batched Telegram digests for medium and low after the sweep finishes.
     Check ids in `mute` (yaml: digest_mute_checks) keep the full bug-log
     lifecycle but never ping Telegram — Ed muted em_dash on 2026-07-12."""
@@ -339,14 +366,14 @@ def send_digests(findings, site_name, tier, dry_run=False, mute=()):
     low = [f for f in findings if f["severity"] == "low" and f["check_id"] not in mute]
     period = {"critical": "daily", "weekly": "weekly", "deep": "bi-weekly"}.get(tier, tier)
     if medium:
-        msg = telegram.format_digest(medium, "medium", site_name, period)
+        msg = telegram.format_digest(medium, "medium", site_name, period, report_url=report_url)
         if dry_run:
             print(f"[DRY-RUN] MEDIUM DIGEST — {len(medium)} findings\n{msg}")
         else:
             telegram.send(msg)
     # low only goes out on the deep tier (bi-weekly), so noise stays low
     if low and tier == "deep":
-        msg = telegram.format_digest(low, "low", site_name, "bi-weekly")
+        msg = telegram.format_digest(low, "low", site_name, "bi-weekly", report_url=report_url)
         if dry_run:
             print(f"[DRY-RUN] LOW DIGEST — {len(low)} findings\n{msg}")
         else:
@@ -370,6 +397,12 @@ async def main():
     if site.get("sitemap") in (None, "TBD"):
         print(f"site '{args.site}' has no sitemap configured yet")
         return
+
+    # Report identity computed BEFORE any alert is sent: critical/high
+    # alerts and digests all link to this report via report_url.
+    sweep_started = datetime.now(timezone.utc)
+    report_rel = html_report.report_rel_path(site["name"], args.tier, sweep_started)
+    report_url = html_report.blob_url(report_rel)
 
     try:
         urls = discover_urls(site["sitemap"])
@@ -476,9 +509,17 @@ async def main():
 
     print(f"DES: {len(findings)} unique findings")
     for f in findings:
-        route(f, dry_run=args.dry_run)
+        route(f, dry_run=args.dry_run, report_url=report_url)
     send_digests(findings, site["name"], args.tier, dry_run=args.dry_run,
-                 mute=set(site.get("digest_mute_checks") or []))
+                 mute=set(site.get("digest_mute_checks") or []), report_url=report_url)
+
+    # Drain the cross-run HIGH queue for this site if we're inside the
+    # 08:00-22:00 SGT window; this is what makes D-04 work across runs,
+    # regardless of whether THIS sweep produced any HIGH finding.
+    if not args.dry_run:
+        n = alert_queue.flush_due(site["name"], telegram.send, telegram.send_photo)
+        if n:
+            print(f"DES: flushed {n} queued high alert(s) (inside 08:00-22:00 SGT window)")
 
     # Lifecycle: close issues that stopped firing (full sweeps only — a
     # --limit run hasn't seen every page and must not mass-close). A sweep that
@@ -491,6 +532,13 @@ async def main():
         closed = bug_log.reconcile(site["name"], {f["check_id"] for f in findings})
         if closed:
             print(f"DES: {len(closed)} issue(s) auto-closed as fixed: {', '.join(closed)}")
+
+    # Self-contained per-sweep report, built LAST so it can include everything
+    # above (findings, screenshots, what-changed). In dry-run too, so this
+    # step is inspectable without sending anything.
+    path = html_report.build(site["name"], args.tier, findings, sweep_started, report_rel,
+                              waived=[f for f, _ in waived], aborted=guard.aborted)
+    print(f"DES: report {path}\nDES: report url {report_url}")
 
     # Alerts that failed to deliver must fail the run — a green sweep whose
     # Telegram went nowhere is how criticals get missed.

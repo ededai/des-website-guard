@@ -71,7 +71,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python -m src.run --site=${{ matrix.site }} --tier=${{ steps.tier.outputs.tier }}
 
-      - name: Commit updated bug log
+      - name: Commit bug log, alert queue and report
         # Runs even when the sweep step fails — findings logged before a
         # crash or an undelivered-alert exit must still persist.
         if: always()
@@ -86,35 +86,51 @@ jobs:
           # both jobs make, and the loser's run FAILED (2026-07-12, -15) — noisy
           # even though the earlier guard kept the log uncorrupted.
           #
-          # Fix: never rebase text. Merge by RECORD OWNERSHIP instead — a sweep
+          # Fix: never rebase text. Merge by RECORD OWNERSHIP instead: a sweep
           # only changes its own site's records, so on every attempt we reset to
           # the latest origin (other site's truth) and re-lay THIS site's records
-          # on top via reporters/merge_bug_log.py. That merge cannot conflict, so
-          # the only thing the retry loop races is the plain push.
-          if ! git status --porcelain -- bug-log.jsonl | grep -q .; then
-            echo "no bug-log changes to commit"; exit 0
+          # on top via reporters/merge_bug_log.py, used for both bug-log.jsonl
+          # and alert-queue.jsonl since it merges purely on each record's
+          # "site" key. That merge cannot conflict, so the only thing the retry
+          # loop races is the plain push.
+          #
+          # The untracked new report under reports/ needs no copy-aside: it has
+          # a unique timestamped filename and git reset --hard never deletes
+          # untracked files, so it survives every reset in the loop below.
+          if ! git status --porcelain -- bug-log.jsonl alert-queue.jsonl reports/ | grep -q .; then
+            echo "no bug-log/alert-queue/report changes to commit"; exit 0
           fi
           cp bug-log.jsonl "${RUNNER_TEMP:-/tmp}/bug-log.job.jsonl"
+          if [ -f alert-queue.jsonl ]; then
+            cp alert-queue.jsonl "${RUNNER_TEMP:-/tmp}/alert-queue.job.jsonl"
+          fi
           BR="${GITHUB_REF_NAME:-main}"
           pushed=""
           for i in 1 2 3 4 5; do
             git fetch origin "$BR"
-            git reset --hard "origin/$BR"          # HEAD+tree = origin; job copy is safe in RUNNER_TEMP
+            git reset --hard "origin/$BR"          # HEAD+tree = origin; job copies are safe in RUNNER_TEMP
             python reporters/merge_bug_log.py \
               --site "$DES_SITE" \
               --origin bug-log.jsonl \
               --job "${RUNNER_TEMP:-/tmp}/bug-log.job.jsonl" \
               --out bug-log.jsonl
-            if git diff --quiet -- bug-log.jsonl; then
-              echo "merged log matches origin; nothing to commit"; pushed=1; break
+            python reporters/merge_bug_log.py \
+              --site "$DES_SITE" \
+              --origin alert-queue.jsonl \
+              --job "${RUNNER_TEMP:-/tmp}/alert-queue.job.jsonl" \
+              --out alert-queue.jsonl
+            python reporters/html_report.py --prune --site "$DES_SITE" --keep 10
+            git add bug-log.jsonl alert-queue.jsonl
+            git add -A reports/
+            if git diff --cached --quiet; then
+              echo "merged state matches origin; nothing to commit"; pushed=1; break
             fi
-            git add bug-log.jsonl
-            git commit -m "des: update bug log (${DES_SITE}) [skip ci]"
+            git commit -m "des: update bug log + report (${DES_SITE}) [skip ci]"
             if git push; then pushed=1; break; fi
             echo "push rejected (attempt $i), re-merging onto latest origin"
             sleep $((i * 5))
           done
           if [ -z "$pushed" ]; then
-            echo "ERROR: bug-log push failed after 5 attempts" >&2
+            echo "ERROR: bug-log/alert-queue/report push failed after 5 attempts" >&2
             exit 1
           fi

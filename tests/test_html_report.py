@@ -1,6 +1,6 @@
 """
-Unit tests for reporters/html_report.py — self-contained per-sweep HTML
-report + what-changed diff + retention prune. No network, no browser.
+Unit tests for reporters/html_report.py: self-contained per-sweep HTML
+report, what-changed diff, and retention prune. No network, no browser.
 
     ./.venv/bin/python -m pytest tests/test_html_report.py
 """

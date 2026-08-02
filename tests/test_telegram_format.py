@@ -1,5 +1,5 @@
 """
-Unit tests for reporters/telegram.py — chunking + HTML formatters. No
+Unit tests for reporters/telegram.py: chunking + HTML formatters. No
 network: send()/send_photo() network paths are exercised only via their
 missing-credentials branch (deterministic, no requests.post call).
 
@@ -36,7 +36,7 @@ def test_chunks_never_exceeds_limit_and_preserves_lines():
     text = "\n".join(lines)
     chunks = t._chunks(text, 4096)
     assert all(len(c) <= 4096 for c in chunks)
-    # Strip continuation prefixes and rejoin — every source line must survive.
+    # Strip continuation prefixes and rejoin; every source line must survive.
     rebuilt = []
     for i, c in enumerate(chunks):
         if i > 0:

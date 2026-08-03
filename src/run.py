@@ -212,7 +212,7 @@ async def render_and_check(playwright, url, site, viewports, guard, capture=True
                 checks.append(visual.check_mobile_menu)
             for fn in checks:
                 try:
-                    if fn is visual.check_chrome_consistency:
+                    if fn in (visual.check_chrome_consistency, visual.check_mobile_menu):
                         f = await fn(page, site)
                     else:
                         f = await fn(page)

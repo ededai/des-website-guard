@@ -30,6 +30,11 @@ header_scrim_marker: null
 mobile_nav_toggle_selector: null
 mobile_nav_drawer_selector: null
 
+# TRW chrome v5 paints a cream `.mmenu .panel`; assert it stays light. AURA's
+# drawer is brand navy by design, so AURA leaves this off (default false) and
+# only the universal transparency check applies there.
+drawer_panel_light: true
+
 required_byline: "Reviewed by The Right Workshop team"
 
 address_marker: "Kaki Bukit"

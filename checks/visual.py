@@ -88,7 +88,7 @@ async def check_console_errors(page, captured_errors):
     return None
 
 
-async def check_mobile_menu(page):
+async def check_mobile_menu(page, site=None):
     """Mobile-only check. Tap the hamburger and confirm:
       - drawer becomes visible (display != none, white-ish bg, .open class)
       - tapping any link inside auto-closes the drawer (universal rule)
@@ -117,7 +117,15 @@ async def check_mobile_menu(page):
     look at the painted panel, not the overlay root, or every v5 page reads as
     `drawer_invisible`.
     """
-    bad = await page.evaluate("""async () => {
+    site = site or {}
+    cfg = {
+        "toggle": site.get("mobile_nav_toggle_selector"),
+        "drawer": site.get("mobile_nav_drawer_selector"),
+        # TRW's drawer panel is cream; AURA's is brand navy by design. Only
+        # sites that opt in get the "panel must be light" assertion.
+        "panelLight": bool(site.get("drawer_panel_light", False)),
+    }
+    bad = await page.evaluate("""async (cfg) => {
         const isMaroonish = (rgb) => {
             const m = rgb.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
             if (!m) return false;
@@ -126,14 +134,32 @@ async def check_mobile_menu(page):
             if (Math.abs(r-217)<8 && Math.abs(g-78)<8 && Math.abs(b-32)<8) return false;
             return r >= 100 && g < 60 && b < 60 && r > g+30 && r > b+30;
         };
-        // Burger: chrome v5 ids first, then legacy ids, then generic classes.
-        const btn = document.getElementById('trwBurger')
-                 || document.getElementById('navHamburger')
-                 || document.getElementById('trwNavHamburger')
-                 || document.querySelector('.burger, .nav-hamburger, .hamburger, .menu-toggle, .nav-toggle, button[aria-label*="menu" i], [class*="burger"], [class*="hamburger"], [class*="menu-btn"]');
+        // A candidate the user cannot see or tap is never the real control.
+        // WordPress core's block-nav ships a 0x0 <button aria-label="Open menu">
+        // on themes that also have a custom drawer; it matched the generic
+        // aria-label selector, won document order, and clicking it toggled
+        // nothing -> `menu_did_not_open` on all 73 AURA pages (2026-08-03).
+        const tappable = (el) => {
+            if (!el) return false;
+            const r = el.getBoundingClientRect();
+            const cs = getComputedStyle(el);
+            return r.width > 0 && r.height > 0 && cs.display !== 'none' && cs.visibility !== 'hidden';
+        };
+        const firstTappable = (sel) => {
+            for (const el of document.querySelectorAll(sel)) { if (tappable(el)) return el; }
+            return null;
+        };
+        // Burger: site-configured selector first, then chrome v5 ids, legacy
+        // ids, then generic classes. Every fallback skips untappable nodes.
+        const btn = (cfg.toggle ? firstTappable(cfg.toggle) : null)
+                 || [document.getElementById('trwBurger'), document.getElementById('navHamburger'), document.getElementById('trwNavHamburger')].find(tappable)
+                 || firstTappable('.burger, .nav-hamburger, .hamburger, .menu-toggle, .nav-toggle, button[aria-label*="menu" i], [class*="burger"], [class*="hamburger"], [class*="menu-btn"]');
         if (!btn) return { issue: 'no_hamburger' };
-        // Drawer: chrome v5 (#trwMmenu / .mmenu) and legacy (#mobileNav / .mobile-nav).
-        const nav = document.getElementById('trwMmenu')
+        // Drawer: site-configured selector, then chrome v5 (#trwMmenu /
+        // .mmenu) and legacy (#mobileNav / .mobile-nav). The drawer is closed
+        // at this point, so it is NOT filtered by tappable().
+        const nav = (cfg.drawer ? document.querySelector(cfg.drawer) : null)
+                 || document.getElementById('trwMmenu')
                  || document.getElementById('mobileNav')
                  || document.querySelector('.mmenu, .mobile-nav, [class*="mmenu"], [class*="mobile-nav"], [class*="drawer"], nav[class*="menu"]');
         if (!nav) return { issue: 'no_drawer' };
@@ -157,7 +183,9 @@ async def check_mobile_menu(page):
         if (bgM) {
             const a = bgM[4] === undefined ? 1 : +bgM[4];
             const lightish = +bgM[1] >= 200 && +bgM[2] >= 200 && +bgM[3] >= 200;
-            if (a < 0.5 || (!lightish && a >= 0.5)) {
+            // Transparency is broken everywhere; "must be light" is a TRW
+            // brand assumption (sites/trw.yaml: drawer_panel_light: true).
+            if (a < 0.5 || (cfg.panelLight && !lightish)) {
                 return { issue: 'drawer_invisible', bg: pcs.backgroundColor, on: painted.className || painted.tagName };
             }
         }
@@ -180,7 +208,7 @@ async def check_mobile_menu(page):
         if (!closedAfterTap) return { issue: 'menu_no_autoclose' };
         if (maroon.length) return { issue: 'menu_maroon_leak', samples: maroon.slice(0, 3) };
         return null;
-    }""")
+    }""", cfg)
     if bad:
         sev = "critical" if bad.get("issue") in ("menu_did_not_open", "no_hamburger", "no_drawer") else "high"
         return {"check": "mobile_menu", "severity": sev,

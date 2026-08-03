@@ -72,6 +72,16 @@ Every sweep writes one self-contained HTML report to `reports/<site>/<timestamp>
 
 Authoritative definitions live in `~/.claude/skills/des-website-guard/SKILL.md`. Edit there, not here.
 
+## False-positive gates (src/run.py `route()`)
+
+Every documented false-positive family (missed JS handlers, id-guessed calculator outputs, CSS console issues miscounted as JS errors, Cloudflare challenge pages judged as broken pages, 0x0 shadow buttons clicked instead of the real control) traced back to the same root cause: a one-shot static check alerting on first sighting, with no reproduce step and no plausibility check against how many pages fired at once. Three structural gates close that off, applied in this order to every critical/high finding, check-agnostic (they cover future checks automatically):
+
+1. **Reproduce-before-alert** — a critical/high finding is re-run against the same URL in a FRESH browser context (fresh page, cleared console errors) within the same sweep before it may alert at that severity (`reproduce_finding()`). If it does not reproduce, it is logged to `bug-log.jsonl` at severity `medium` with `flaky: true` and only ever reaches the end-of-sweep digest — never immediate Telegram.
+2. **Mass-finding plausibility gate** — if a check_id fires critical/high on more than 50% of the site's swept pages, Des does not send a per-page or aggregated critical/high alert. It sends ONE medium alert: `suspected checker defect: {check_id} fired on N/M pages, verify checker before trusting`, with 3 sample URLs. History shows every all-pages finding has been a checker bug, never a real site-wide break.
+3. **console_errors cross-sweep debounce** — `console_errors` alone has multiple unconfirmed-positive incidents. First sighting for a site logs at its true severity in the bug log (so history/MTTR stay accurate) but delivers as a medium digest item, not an immediate/queued alert. A second CONSECUTIVE sweep with the same check_id+site (still open when the new sweep starts) escalates normally.
+
+Gate order matters: a finding that fails gate 1 never reaches 2 or 3. A reproducing all-pages finding is caught by gate 2 before it can reach gate 3. Only a reproducing, not-mass finding can reach gate 3.
+
 ## Status
 
 Both sites sweeping on cron (daily critical, weekly critical+high, bi-weekly deep). `bug-log.jsonl` is the audit trail; the per-sweep HTML report under `reports/` is the visual record.

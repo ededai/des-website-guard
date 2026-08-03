@@ -70,6 +70,11 @@ def log_finding(finding):
         e["url_list"] = finding["urls"][:50]
         e["evidence"] = str(finding.get("evidence", ""))[:1900]
         e["details"] = [str(d)[:400] for d in (finding.get("details") or [])][:5]
+        # Structural-gate provenance (src/run.py route()): a finding that only
+        # survived because it failed to reproduce is recorded as such, not
+        # silently indistinguishable from a confirmed medium.
+        e["flaky"] = bool(finding.get("flaky", False))
+        e["suspected_checker_defect"] = bool(finding.get("suspected_checker_defect", False))
         _save(entries)
         return str(_path())
     status, severity, first_seen = "open", finding["severity"], now
@@ -93,6 +98,9 @@ def log_finding(finding):
         "details": [str(d)[:400] for d in (finding.get("details") or [])][:5],
         "screenshots": finding.get("screenshots", []),
         "MTTR_hours": None,
+        # See note on the update branch above.
+        "flaky": bool(finding.get("flaky", False)),
+        "suspected_checker_defect": bool(finding.get("suspected_checker_defect", False)),
     })
     _save(entries)
     return str(_path())

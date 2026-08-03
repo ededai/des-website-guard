@@ -250,6 +250,76 @@ async def render_and_check(playwright, url, site, viewports, guard, capture=True
     return findings_per_viewport
 
 
+# How many of a check_id's affected URLs the reproduce gate re-verifies
+# before giving up and calling it non-reproducing. Capped so a 73-page
+# finding doesn't cost 73 extra page loads to confirm.
+REPRODUCE_SAMPLE = 3
+
+
+async def reproduce_finding(pw, finding, site, guard, sitemap_urls=None):
+    """REPRODUCE-BEFORE-ALERT gate. Re-run `finding["check_id"]` against up to
+    REPRODUCE_SAMPLE of its affected URLs in a FRESH browser context (fresh
+    page, cleared captured_errors) and return True the moment it fires again
+    on any of them.
+
+    This is deliberately check-agnostic: it dispatches on WHERE a check_id's
+    logic lives, not on what the check does, so every current and future
+    check is covered without teaching this function anything new:
+      - curated recheck ids (checks.recheck.REGISTRY) reuse their own
+        dedicated producer via recheck.run_site_rechecks() — already written
+        to re-test that exact bug, and a crashed/unverifiable re-test there
+        already reads as "keep open" rather than "absent" (never a silent
+        downgrade on ambiguity).
+      - everything else — the whole checks/visual.py + checks/content_rules.py
+        battery, plus the network-level ids render_and_check() itself emits
+        (load_failed, http_5xx, http_4xx_dead_page, crawl_blocked,
+        sweep_aborted_bot_challenge) — is re-verified by calling
+        render_and_check() again: the SAME function that produced the
+        original finding, against a brand-new browser context.
+
+    Every documented false-positive family (missed handlers, id-guessed
+    outputs, CSS-as-JS-errors, challenge pages, 0x0 shadow buttons) was a
+    single, unconfirmed sighting. This is the generic backstop: nothing may
+    alert at critical/high off one look, regardless of which check produced
+    it or whether that check exists yet.
+
+    Uses a throwaway SweepGuard so reproduction traffic never touches the
+    real sweep's crawl-health accounting — guard.pages_attempted /
+    blocked_ratio feed the abort/reconcile decisions and must reflect only
+    the actual crawl, not extra confirmation requests.
+    """
+    check_id = finding.get("check_id", "")
+    urls = (finding.get("urls") or [])[:REPRODUCE_SAMPLE]
+    if not urls:
+        return False
+
+    if check_id in recheck.REGISTRY:
+        record = {"check_id": check_id, "severity": finding.get("severity", "high"), "url_list": urls}
+        try:
+            subs = await recheck.run_site_rechecks(
+                pw, site, [record], sitemap_urls or urls, http_budget=10, nav_budget=6)
+        except Exception:
+            return False
+        return any(s.get("check") == check_id for s in subs)
+
+    by_url_vp = finding.get("_viewport_by_url") or {}
+    repro_guard = crawl_guard.SweepGuard(
+        delay=guard.delay, abort_ratio=guard.abort_ratio, min_pages=guard.min_pages,
+        retry_backoff_base=guard.retry_backoff_base, max_retries=guard.max_retries,
+    )
+    for url in urls:
+        vp_name = by_url_vp.get(url, "desktop")
+        if vp_name not in DEVICES:
+            vp_name = "desktop"
+        try:
+            per_vp = await render_and_check(pw, url, site, [vp_name], repro_guard, capture=False)
+        except Exception:
+            continue
+        if any(f["check"] == check_id for f in per_vp.get(vp_name, [])):
+            return True
+    return False
+
+
 SEV_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 
 
@@ -272,6 +342,12 @@ def dedupe(all_findings, site_name, in_charge):
             "in_charge": in_charge,
             "summary": ev[:200],
             "urls": [],
+            # First-seen viewport per affected URL. Used only by the
+            # reproduce-before-alert gate (reproduce_finding()) so a
+            # mobile-only check (e.g. mobile_menu) gets re-verified on the
+            # viewport it actually fired on, not silently re-checked on
+            # desktop where that check never even runs.
+            "_viewport_by_url": {},
             "evidence": ev,
             # Raw per-page detail (e.g. the actual console message text). The
             # summary counts things; this says WHAT. Without it a
@@ -287,6 +363,7 @@ def dedupe(all_findings, site_name, in_charge):
             g["severity"] = f["severity"]
         if f["url"] not in g["urls"]:
             g["urls"].append(f["url"])
+        g["_viewport_by_url"].setdefault(f["url"], f.get("viewport", "desktop"))
         # Merge DISTINCT evidence strings instead of keeping only the first.
         # 2026-07-10: an autop_injection group spanning p_wrapped_comment (1 pg)
         # and p_wrapped_script (6 pgs) alerted as "7 pages" but named only the
@@ -328,11 +405,92 @@ def is_waived(finding, waivers):
     return None
 
 
-def route(finding, dry_run=False, report_url=None):
-    """Immediate routing for critical (photo when a screenshot exists). High
-    is never sent immediately: it's queued (reporters/alert_queue.py) and
-    drained at 08:00-22:00 SGT. Medium/low collected for digest."""
+# check_id subject to the console-errors cross-sweep debounce (gate 3).
+# Scoped deliberately: console_errors alone carries 4+ documented
+# unconfirmed-positive incidents (feedback_des_audit_no_handler_false_positives.md).
+DEBOUNCE_CHECK_IDS = {"console_errors"}
+
+
+async def route(finding, dry_run=False, report_url=None, reproduce_fn=None, total_pages=None):
+    """Severity routing, gated by three structural, check-agnostic defenses
+    against single-measurement ghosts — the common thread across every
+    documented false-positive family (missed handlers, id-guessed outputs,
+    CSS-as-JS-errors, challenge pages, 0x0 shadow buttons):
+
+      1. REPRODUCE-BEFORE-ALERT — any critical/high finding must reproduce
+         against a FRESH browser context (via `reproduce_fn`) before it may
+         alert at that severity. A finding that fails to reproduce is
+         downgraded to medium with flaky=True and only ever reaches the
+         digest — never immediate Telegram.
+      2. MASS-FINDING PLAUSIBILITY GATE — a check_id firing critical/high on
+         more than half the swept pages (`total_pages`) is far more likely to
+         be a checker defect than a real site-wide break (every all-pages
+         incident on record has been the former: bot-challenge poisoning,
+         0x0 shadow buttons). One medium "suspected checker defect" alert
+         replaces the storm.
+      3. CONSOLE-ERRORS CROSS-SWEEP DEBOUNCE — first sighting of a
+         DEBOUNCE_CHECK_IDS check for a site logs at its TRUE severity (bug
+         log / MTTR unaffected) but delivers as a medium digest item; a
+         second CONSECUTIVE sweep (still open when this one starts) escalates
+         normally.
+
+    Order matters and is enforced by early returns: 1 -> 2 -> 3. A finding
+    that fails gate 1 never reaches 2 or 3. A reproducing all-pages finding
+    is caught by 2 before it can reach 3. Only a reproducing, not-mass
+    finding can reach 3.
+
+    Immediate delivery: critical (photo when a screenshot exists). High is
+    never sent immediately: it's queued (reporters/alert_queue.py) and
+    drained at 08:00-22:00 SGT. Medium/low collected for digest.
+    """
     sev = finding["severity"]
+    check_id = finding.get("check_id", "")
+
+    if sev in ("critical", "high"):
+        # --- Gate 1: reproduce-before-alert ---------------------------
+        reproduced = bool(reproduce_fn) and await reproduce_fn(finding)
+        if not reproduced:
+            finding["severity"] = "medium"
+            finding["flaky"] = True
+            if not dry_run:
+                bug_log.log_finding(finding)
+            else:
+                print(f"[DRY-RUN] FLAKY (gate 1: did not reproduce, downgraded medium) — "
+                      f"{finding['title']} ({len(finding['urls'])} URLs)")
+            return  # medium/low handled in send_digests() after the sweep finishes
+
+        # --- Gate 2: mass-finding plausibility gate --------------------
+        if total_pages:
+            n = len(finding["urls"])
+            if n / total_pages > 0.5:
+                sample = ", ".join(finding["urls"][:3])
+                finding["severity"] = "medium"
+                finding["suspected_checker_defect"] = True
+                finding["evidence"] = (
+                    f"suspected checker defect: {check_id} fired on {n}/{total_pages} pages, "
+                    f"verify checker before trusting. Sample URLs: {sample}"
+                )
+                if not dry_run:
+                    bug_log.log_finding(finding)
+                else:
+                    print(f"[DRY-RUN] SUSPECTED CHECKER DEFECT (gate 2) — {finding['evidence']}")
+                return
+
+        # --- Gate 3: console-errors cross-sweep debounce ----------------
+        if check_id in DEBOUNCE_CHECK_IDS:
+            # Read BEFORE log_finding() mutates state, or every sighting
+            # would see itself as "already open".
+            already_open = bool(bug_log.open_records(finding["site"], check_ids=[check_id]))
+            if not already_open:
+                if not dry_run:
+                    bug_log.log_finding(finding)  # true severity persisted
+                finding["_deliver_medium"] = True
+                if dry_run:
+                    print(f"[DRY-RUN] FIRST SIGHTING (gate 3: {check_id}) — delivered as medium "
+                          f"digest item, true severity {sev} logged")
+                return
+            # else: already open from a prior sweep -> escalate normally below.
+
     if not dry_run:
         bug_log.log_finding(finding)
     shot = (finding.get("screenshots") or [None])[0]
@@ -358,12 +516,20 @@ def route(finding, dry_run=False, report_url=None):
 def send_digests(findings, site_name, tier, dry_run=False, mute=(), report_url=None):
     """Emit batched Telegram digests for medium and low after the sweep finishes.
     Check ids in `mute` (yaml: digest_mute_checks) keep the full bug-log
-    lifecycle but never ping Telegram — Ed muted em_dash on 2026-07-12."""
-    muted = [f for f in findings if f["check_id"] in mute and f["severity"] in ("medium", "low")]
+    lifecycle but never ping Telegram — Ed muted em_dash on 2026-07-12.
+
+    `_digest_sev()` treats a gate-3 first-sighting (route() sets
+    `_deliver_medium` but leaves `severity` at its true value, on purpose —
+    see route()) as medium for digest purposes without touching the record
+    bug_log already wrote at true severity."""
+    def _digest_sev(f):
+        return "medium" if f.get("_deliver_medium") else f["severity"]
+
+    muted = [f for f in findings if f["check_id"] in mute and _digest_sev(f) in ("medium", "low")]
     if muted:
         print(f"DES: digest muted for {len(muted)} finding(s): {sorted(f['check_id'] for f in muted)}")
-    medium = [f for f in findings if f["severity"] == "medium" and f["check_id"] not in mute]
-    low = [f for f in findings if f["severity"] == "low" and f["check_id"] not in mute]
+    medium = [f for f in findings if _digest_sev(f) == "medium" and f["check_id"] not in mute]
+    low = [f for f in findings if _digest_sev(f) == "low" and f["check_id"] not in mute]
     period = {"critical": "daily", "weekly": "weekly", "deep": "bi-weekly"}.get(tier, tier)
     if medium:
         msg = telegram.format_digest(medium, "medium", site_name, period, report_url=report_url)
@@ -484,34 +650,45 @@ async def main():
                 rc_findings = await recheck.run_site_rechecks(pw, site, open_curated, urls)
                 all_findings.extend(rc_findings)
 
-    # An aborted sweep reports ONE fact: we were bot-challenged and saw nothing
-    # we can trust. Everything gathered before the abort is discarded rather
-    # than shipped — partial data from a challenged crawl is how 159 fake
-    # criticals got sent on 2026-08-02.
-    if guard.aborted:
-        all_findings = [guard.abort_finding(site["url"])]
+        # An aborted sweep reports ONE fact: we were bot-challenged and saw
+        # nothing we can trust. Everything gathered before the abort is
+        # discarded rather than shipped — partial data from a challenged
+        # crawl is how 159 fake criticals got sent on 2026-08-02.
+        if guard.aborted:
+            all_findings = [guard.abort_finding(site["url"])]
 
-    findings = dedupe(all_findings, site["name"], site["in_charge"])
-    findings.sort(key=lambda f: {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(f["severity"], 9))
+        findings = dedupe(all_findings, site["name"], site["in_charge"])
+        findings.sort(key=lambda f: {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(f["severity"], 9))
 
-    # Learning loop: drop findings that match a waiver in sites/<site>.yaml (confirmed false
-    # positives / known-noise). Waived findings are printed for audit but never alerted.
-    waivers = site.get("waivers", [])
-    active, waived = [], []
-    for f in findings:
-        w = is_waived(f, waivers)
-        (waived if w else active).append((f, w))
-    if waived:
-        print(f"DES: {len(waived)} finding(s) waived (see sites/{args.site}.yaml waivers):")
-        for f, w in waived:
-            print(f"  WAIVED {f['severity'].upper()} — {f['title']} ({len(f['urls'])} URLs) — {w.get('reason','(no reason)')}")
-    findings = [f for f, _ in active]
+        # Learning loop: drop findings that match a waiver in sites/<site>.yaml (confirmed false
+        # positives / known-noise). Waived findings are printed for audit but never alerted.
+        waivers = site.get("waivers", [])
+        active, waived = [], []
+        for f in findings:
+            w = is_waived(f, waivers)
+            (waived if w else active).append((f, w))
+        if waived:
+            print(f"DES: {len(waived)} finding(s) waived (see sites/{args.site}.yaml waivers):")
+            for f, w in waived:
+                print(f"  WAIVED {f['severity'].upper()} — {f['title']} ({len(f['urls'])} URLs) — {w.get('reason','(no reason)')}")
+        findings = [f for f, _ in active]
 
-    print(f"DES: {len(findings)} unique findings")
-    for f in findings:
-        route(f, dry_run=args.dry_run, report_url=report_url)
-    send_digests(findings, site["name"], args.tier, dry_run=args.dry_run,
-                 mute=set(site.get("digest_mute_checks") or []), report_url=report_url)
+        # Reproduce-before-alert (gate 1) needs a live browser, so route()
+        # runs here, inside the Playwright context, instead of after it
+        # closes. total_pages (gate 2's denominator) is the count of
+        # distinct pages this sweep actually visited — fixed by now, and
+        # never touched by reproduction's own throwaway guard.
+        total_pages = guard.pages_attempted
+
+        async def _reproduce(finding):
+            return await reproduce_finding(pw, finding, site, guard, sitemap_urls=urls)
+
+        print(f"DES: {len(findings)} unique findings")
+        for f in findings:
+            await route(f, dry_run=args.dry_run, report_url=report_url,
+                        reproduce_fn=_reproduce, total_pages=total_pages)
+        send_digests(findings, site["name"], args.tier, dry_run=args.dry_run,
+                     mute=set(site.get("digest_mute_checks") or []), report_url=report_url)
 
     # Drain the cross-run HIGH queue for this site if we're inside the
     # 08:00-22:00 SGT window; this is what makes D-04 work across runs,

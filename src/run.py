@@ -600,7 +600,12 @@ async def main():
     if args.limit:
         urls = urls[: args.limit]
 
-    viewports = ["desktop"] if args.tier == "critical" else list(DEVICES.keys())
+    # Daily tier includes one phone viewport so check_mobile_menu (phone-only)
+    # runs every day under the full gate stack. Replaces the retired claude.ai
+    # "TRW Mobile Menu Audit" trigger (disabled 2026-08-09), which used pre-v5
+    # selectors, concurrency 6 (tripped the Cloudflare challenge) and alerted
+    # without reproduction.
+    viewports = ["desktop", "phone_ios"] if args.tier == "critical" else list(DEVICES.keys())
 
     # Politeness + crawl-health guard. Defaults are deliberately gentle: Des is
     # a monitor, not a load test, and a challenged crawl produces garbage

@@ -197,7 +197,7 @@ def test_gate3_console_errors_first_sighting_then_second_consecutive_escalates(t
 
 
 def test_gate3_only_applies_to_debounced_check_ids():
-    assert run.DEBOUNCE_CHECK_IDS == {"console_errors"}
+    assert run.DEBOUNCE_CHECK_IDS == {"console_errors", "resource_404"}
 
 
 # --- Gate ordering: a reproducing all-pages console_errors hits gate 2 -----

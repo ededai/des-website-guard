@@ -118,7 +118,7 @@ HARNESS_CHECK_IDS = {
     # guard.reconcile_is_safe(), so a still-blocked sweep never reaches it.
     "crawl_blocked", "sweep_aborted_bot_challenge",
     "sweep_page_crash", "missing_nav", "missing_footer", "missing_required_nav_link",
-    "maroon_leak", "broken_images", "console_errors", "mobile_menu", "dead_buttons",
+    "maroon_leak", "broken_images", "console_errors", "resource_404", "mobile_menu", "dead_buttons",
     "em_dash", "autop_injection", "missing_byline", "missing_unit_number",
     "footer_drift", "missing_breadcrumb", "missing_meta_description",
     "long_meta_description", "missing_title", "long_title", "missing_canonical",

@@ -83,8 +83,27 @@ async def check_broken_images(page):
 
 
 async def check_console_errors(page, captured_errors):
+    """Genuine JS errors only. Chrome's URL-less "Failed to load resource"
+    lines are filtered out at capture time (src/run.py RESOURCE_MSG_MARKERS)
+    and resource failures are judged from the network log instead — see
+    check_resource_failures below (2026-08-17 post-mortem)."""
     if captured_errors:
         return {"check": "console_errors", "severity": "high", "evidence": f"{len(captured_errors)} JS console errors", "details": captured_errors[:5]}
+    return None
+
+
+def check_resource_failures(failures):
+    """First-party subresources that answered HTTP >= 400 during the load,
+    taken from the network log — always with the exact URL and status, so a
+    finding is verifiable and can never be a misread of a beacon abort.
+    `failures` is the output of src.run.first_party_failures()."""
+    if failures:
+        return {
+            "check": "resource_404",
+            "severity": "high",
+            "evidence": f"{len(failures)} first-party resource(s) failed with HTTP >= 400",
+            "details": [f"{status} {u}" for u, status in failures[:5]],
+        }
     return None
 
 

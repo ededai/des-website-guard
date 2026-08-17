@@ -23,6 +23,7 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yaml
 
@@ -59,7 +60,43 @@ def _console_noise(text, extra_patterns):
     return any(p in text for p in CONSOLE_IGNORE_PATTERNS) or any(p in text for p in (extra_patterns or []))
 
 
-async def _goto_with_backoff(page, url, guard, captured_errors=None):
+# Chrome's console line for ANY failed subresource is just
+# "Failed to load resource: <reason>" — NO URL in msg.text. The same prefix
+# covers a genuine 404 on our own asset AND a third-party beacon aborted at
+# page teardown (the GA4 /g/collect POST logs net::ERR_ABORTED while actually
+# returning 204). Matching that text produced the unfalsifiable, flaky
+# "Console Errors (7 URLs)" finding that kept reopening (2026-08-17
+# post-mortem). Resource failures are therefore judged ONLY from the network
+# log (response status >= 400), scoped to first-party hosts, and reported with
+# the exact failing URL. The console listener keeps genuine JS errors only.
+RESOURCE_MSG_MARKERS = ("Failed to load resource", "net::ERR_")
+
+# Hosts whose failures are OUR problem even though the hostname differs from
+# the site: the wp.com Photon CDN serves the site's own media.
+FIRST_PARTY_EXTRA_HOSTS = {"i0.wp.com", "i1.wp.com", "i2.wp.com", "i3.wp.com"}
+
+
+def _is_resource_msg(text):
+    return any(m in text for m in RESOURCE_MSG_MARKERS)
+
+
+def first_party_failures(failures, page_url):
+    """(url, status) pairs that are the site's problem: the site host, its
+    subdomains, or the Photon CDN carrying its media. Third-party beacons,
+    analytics and map tiles are excluded — their transient failures are not
+    site defects. Deduped, order preserved."""
+    site_host = urlparse(page_url).hostname or ""
+    out, seen = [], set()
+    for u, status in failures:
+        host = urlparse(u).hostname or ""
+        is_ours = host == site_host or host.endswith("." + site_host) or host in FIRST_PARTY_EXTRA_HOSTS
+        if is_ours and (u, status) not in seen:
+            seen.add((u, status))
+            out.append((u, status))
+    return out
+
+
+async def _goto_with_backoff(page, url, guard, captured_errors=None, captured_failures=None):
     """Navigate, and if the edge bot-challenges us, back off and retry once
     before believing it. Returns (status, html, verdict, evidence).
 
@@ -92,6 +129,10 @@ async def _goto_with_backoff(page, url, guard, captured_errors=None):
         # what this module exists to prevent.
         if captured_errors is not None:
             captured_errors.clear()
+        # Same reasoning for the network log: the challenge interstitial's own
+        # 403/4xx responses must not survive into the clean retried load.
+        if captured_failures is not None:
+            captured_failures.clear()
 
 
 async def render_and_check(playwright, url, site, viewports, guard, capture=True):
@@ -124,13 +165,24 @@ async def render_and_check(playwright, url, site, viewports, guard, capture=True
             page.on(
                 "console",
                 lambda msg: captured_errors.append(f"[{msg.type}] {msg.text}")
-                if msg.type == "error" and not _console_noise(msg.text, ignore_extra)
+                if msg.type == "error"
+                and not _console_noise(msg.text, ignore_extra)
+                and not _is_resource_msg(msg.text)
                 else None,
+            )
+            # Resource failures come from the network log, never console text
+            # (see RESOURCE_MSG_MARKERS above for why).
+            captured_failures = []
+            page.on(
+                "response",
+                lambda r: captured_failures.append((r.url, r.status))
+                if r.status >= 400 else None,
             )
 
             try:
                 status, html, verdict, http_evidence = await _goto_with_backoff(
-                    page, url, guard, captured_errors=captured_errors)
+                    page, url, guard, captured_errors=captured_errors,
+                    captured_failures=captured_failures)
             except Exception as e:
                 findings_per_viewport.setdefault(vp_name, []).append({"url": url, "viewport": vp_name, "check": "load_failed", "severity": "critical", "evidence": str(e)})
                 await ctx.close()
@@ -223,8 +275,15 @@ async def render_and_check(playwright, url, site, viewports, guard, capture=True
                     f["viewport"] = vp_name
                     findings.append(f)
 
-            # console errors collected during navigation
+            # console errors collected during navigation (genuine JS errors only)
             f = await visual.check_console_errors(page, captured_errors)
+            if f:
+                f["url"] = url
+                f["viewport"] = vp_name
+                findings.append(f)
+
+            # first-party resource failures from the network log, with URLs
+            f = visual.check_resource_failures(first_party_failures(captured_failures, url))
             if f:
                 f["url"] = url
                 f["viewport"] = vp_name
@@ -405,10 +464,13 @@ def is_waived(finding, waivers):
     return None
 
 
-# check_id subject to the console-errors cross-sweep debounce (gate 3).
+# check_ids subject to the console-errors cross-sweep debounce (gate 3).
 # Scoped deliberately: console_errors alone carries 4+ documented
 # unconfirmed-positive incidents (feedback_des_audit_no_handler_false_positives.md).
-DEBOUNCE_CHECK_IDS = {"console_errors"}
+# resource_404 joined 2026-08-17: it replaces the resource half of the old
+# console matcher, and a transient CDN blip should ride the same debounce
+# before it may page anyone.
+DEBOUNCE_CHECK_IDS = {"console_errors", "resource_404"}
 
 
 async def route(finding, dry_run=False, report_url=None, reproduce_fn=None, total_pages=None):

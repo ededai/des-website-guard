@@ -1,0 +1,39 @@
+# The Right Workshop, Des v2 config.
+# Template URLs verified HTTP 200 on 2026-08-25 before this file was written.
+name: TRW
+base_url: https://therightworkshop.com
+sitemap_url: https://therightworkshop.com/sitemap_index.xml
+wp_api_base: https://therightworkshop.com/wp-json/wp/v2
+
+# Chrome selectors must accept BOTH generations. A selector rename is not a
+# broken menu, and demanding only the new one produced a critical false
+# positive across the whole site in 2026-05.
+nav_selector: "nav.nav, .trw-injected-nav, header nav, nav:not([class*='bread']):not(.bc)"
+footer_selector: "footer, .trw-injected-footer"
+mobile_nav_toggle_selector: ".burger, #trwBurger, .nav-hamburger, #navHamburger"
+mobile_nav_panel_selector: ".mmenu, #trwMmenu, .mobile-nav, #mobileNav"
+
+# One page per template. This is the load-bearing half of the daily sweep:
+# site-wide chrome is injected by Code Snippet 25, so it can break every page
+# at once without any individual page being edited, which no changed-pages
+# query would ever surface.
+templates:
+  - {name: homepage, url: "https://therightworkshop.com/"}
+  - {name: service,  url: "https://therightworkshop.com/services/accident-claims/"}
+  - {name: brand,    url: "https://therightworkshop.com/brands/peugeot/"}
+  - {name: article,  url: "https://therightworkshop.com/gearbox-oil-change-singapore-cost/"}
+  - {name: topic,    url: "https://therightworkshop.com/topics/battery/"}
+  - {name: coe_hub,  url: "https://therightworkshop.com/coe-results/"}
+  - {name: contact,  url: "https://therightworkshop.com/contact/"}
+  - {name: about,    url: "https://therightworkshop.com/about/"}
+
+# Never worth a browser: attachment pages, feeds, the API itself, paginated
+# duplicates and search results.
+skip_patterns:
+  - "/wp-json/"
+  - "/feed/?$"
+  - "/page/\\d+/?$"
+  - "\\?s="
+  - "/attachment/"
+  - "/wp-content/uploads/"
+  - "\\.(jpg|jpeg|png|gif|webp|svg|pdf|zip)$"

@@ -1,7 +1,7 @@
 ---
 task: Des v2 engine
 date: 2026-08-25
-status: incomplete
+status: complete
 spec: SPEC-V2.md
 ---
 
@@ -29,7 +29,44 @@ Running them against therightworkshop.com exposed four false-positive classes
 truncations, and stretched overlay links), all now fixed. Desktop is clean
 across four pages.
 
-## Remaining
+## Wave 2 (2026-08-27): it runs
+
+`des2/fetch.py` opens pages and extracts the counts the baseline compares.
+`des2/run.py` is the sweep itself: discover, visit, gate, check, baseline,
+verify, reconcile, report. `.github/workflows/des-v2.yml` runs it daily and
+fully on Mondays, persists baselines back to the repo, and alarms separately if
+the guard itself could not run.
+
+Proven live, end to end:
+- first run announced nothing and wrote baselines (correct: it does not yet
+  know what the pages should look like)
+- a tampered baseline (body cut 80%, byline removed) was caught on all three
+  pages with before/after numbers, routed to Bryan
+- repeat runs did NOT re-alert the same open findings
+- findings escalate at 7 days; the heartbeat admits the standing backlog
+- three consecutive runs on the healthy site produced zero alerts
+
+Two more false positives were found only by running it for real, both fixed:
+mega-menu and carousel elements overlap by design, and widgets caught
+mid-animation overlap momentarily (this one FLICKERED between sweeps, which
+reads as a new fault each time).
+
+Alerts stay OFF behind the `DES_V2_ALERTS` repo variable until a week of quiet
+runs proves it.
+
+## Corrections made 2026-08-27 (see also the same-dated commits)
+
+Ed compared the build against advice from an earlier session and was right on
+every count:
+1. Coverage was bounded to save Actions minutes on a PUBLIC repo where minutes
+   are free. The constraint belonged to Cole's private repo. Now sweeps
+   everything.
+2. Findings went silent forever once reported. Now escalate at 7 and 14 days.
+3. Only two viewports. Now 320, 390, 768, 1440.
+4. Caused by 1: whole-site sweeping would have sent ~2,400 tap-target findings
+   on day one. Baselines now separate pre-existing design from new defects.
+
+## Still open
 
 1. `des2/fetch.py` and `des2/run.py`: the orchestrator that opens one browser,
    walks the daily set, runs the battery, verifies, reconciles and reports.

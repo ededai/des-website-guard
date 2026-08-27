@@ -109,6 +109,26 @@ data, Codi for chrome and infrastructure, Dom for media. Findings persist in a
 bug log with status (open, fixed, reopened) so nothing is lost and repeats do
 not nag.
 
+### Re-alert policy, and escalation by age (added 2026-08-27)
+
+A finding alerts when it is NEW or when it REOPENS. One already open and
+unchanged stays in the log and does not ping again, because a guard repeating
+yesterday's news is one you learn to ignore.
+
+But reporting once and then going silent forever lets something stay broken and
+unmentioned indefinitely. So an unfixed finding earns another mention at 7 days
+and a harder one at 14. Twice, by age, never by repetition. The weekly
+heartbeat carries the count of known-open findings, so an all-clear can never
+hide a standing backlog.
+
+### Layout: pre-existing versus new
+
+Longstanding design (36x36 social icons, 32x16 carousel dots) is not today's
+regression. Each baseline remembers which layout defects a page already had,
+and only new ones alert; the rest are backlog. Without this, sweeping every
+page across three touch viewports would have sent roughly 2,400 findings on the
+first run.
+
 ## 7. Cadence and cost
 
 Daily targeted sweep, weekly full sweep. No publish-triggered runs.

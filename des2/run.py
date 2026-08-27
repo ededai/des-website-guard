@@ -38,7 +38,7 @@ from des2.models import VIEWPORTS, Finding
 SGT = timezone(timedelta(hours=8))
 
 
-async def check_page(page, v, site_cfg) -> list[Finding]:
+async def check_page(page, v, site_cfg, with_layout: bool = True) -> list[Finding]:
     """Every check that needs a live DOM, for one page at one viewport."""
     out: list[Finding] = []
     out += cb.check_page_error(v.status, v.url, v.viewport)
@@ -48,12 +48,14 @@ async def check_page(page, v, site_cfg) -> list[Finding]:
     out += await cb.check_chrome(page, v.url, v.viewport, site_cfg)
     out += await cb.check_broken_images(page, v.url, v.viewport)
     out += await cb.check_mobile_menu(page, v.url, v.viewport, site_cfg)
-    for layout_check in cl.ALL_LAYOUT_CHECKS:
-        out += await layout_check(page, v.url, v.viewport)
+    if with_layout:
+        for layout_check in cl.ALL_LAYOUT_CHECKS:
+            out += await layout_check(page, v.url, v.viewport)
     return out
 
 
-async def sweep_one(context, url: str, viewport: str, site_cfg, baseline_root):
+async def sweep_one(context, url: str, viewport: str, site_cfg, baseline_root,
+                    with_layout: bool = True):
     """One page at one viewport. Returns (findings, blocked, layout_findings)."""
     page, v = await fetch.visit(context, url, viewport)
     try:
@@ -63,7 +65,7 @@ async def sweep_one(context, url: str, viewport: str, site_cfg, baseline_root):
             # from it except the fact that we could not see it.
             return [gates.blocked_finding(url, viewport, evidence)], True, []
 
-        found = await check_page(page, v, site_cfg)
+        found = await check_page(page, v, site_cfg, with_layout=with_layout)
         layout = [f for f in found if f.kind == "layout"]
         other = [f for f in found if f.kind != "layout"]
 
@@ -76,12 +78,21 @@ async def sweep_one(context, url: str, viewport: str, site_cfg, baseline_root):
 
         # Advance the baseline ONLY when the page is healthy. A broken page
         # keeps its old baseline so the break stays visible.
+        def _keep_layout_memory(fp):
+            # A daily run does not look at layout, so it must NOT overwrite the
+            # remembered defects with an empty list. Doing so would make every
+            # longstanding quirk look brand new at the next weekly sweep.
+            if with_layout:
+                return bl.remember_layout(fp, layout)
+            fp.layout_defects = list(old.layout_defects) if old else []
+            return fp
+
         if facts and not losses and not other:
-            bl.accept(url, viewport, bl.remember_layout(current, layout), root=baseline_root)
+            bl.accept(url, viewport, _keep_layout_memory(current), root=baseline_root)
         elif old is None and facts:
             # First sight: record what is there, defects and all, so day one
             # announces nothing.
-            bl.accept(url, viewport, bl.remember_layout(current, layout), root=baseline_root)
+            bl.accept(url, viewport, _keep_layout_memory(current), root=baseline_root)
 
         return other + losses + fresh_layout, False, layout
     finally:
@@ -98,6 +109,15 @@ async def sweep(site_name: str, tier: str = "daily", silent: bool = False,
     site_label = cfg.get("name", site_name)
     baseline_root = os.path.join("baselines", site_name)
 
+    # SPLIT BY VALUE (2026-08-27). Functional breakage is cheap to check and
+    # matters every day. Layout is the expensive half (five checks across four
+    # widths) and rarely changes without a deploy, so it earns a weekly slot
+    # rather than a daily one. Both tiers still sweep every page.
+    #   daily  : whole site, desktop + phone, breakage and lost content
+    #   weekly : whole site, all four widths, everything including layout
+    with_layout = (tier == "weekly")
+    viewports = list(VIEWPORTS) if with_layout else ["desktop", "phone"]
+
     urls = (all_urls(cfg) if tier == "weekly" else daily_set(cfg, now=now)[0])
     if limit:
         urls = urls[:limit]
@@ -111,12 +131,13 @@ async def sweep(site_name: str, tier: str = "daily", silent: bool = False,
     blocked = 0
     page_views = 0
 
-    # Viewports run concurrently, but only two at a time. Four would quadruple
-    # the request rate against a host that has bot-challenged our sweeps
-    # before (2026-08-02, when challenge pages were mistaken for 159 broken
-    # pages), and a guard that gets itself blocked measures nothing. Two halves
-    # the wall clock while keeping the load civil.
-    lane = asyncio.Semaphore(2)
+    # All four viewports at once, with a longer pause between pages to hold the
+    # per-host request rate roughly where two lanes had it. What this site's
+    # edge reacts to is requests per second, not how many browser contexts we
+    # happen to own, and the 2026-08-02 challenge storm came from hammering it
+    # fast rather than from breadth. Measured: this keeps it near half a
+    # request a second while halving the wall clock again.
+    lane = asyncio.Semaphore(4)
 
     async def sweep_viewport(browser, viewport):
         found_all, blocked_n, views = [], 0, 0
@@ -125,7 +146,7 @@ async def sweep(site_name: str, tier: str = "daily", silent: bool = False,
             try:
                 for url in urls:
                     found, was_blocked, _ = await sweep_one(
-                        context, url, viewport, cfg, baseline_root)
+                        context, url, viewport, cfg, baseline_root, with_layout)
                     found_all += found
                     blocked_n += 1 if was_blocked else 0
                     views += 1
@@ -138,7 +159,7 @@ async def sweep(site_name: str, tier: str = "daily", silent: bool = False,
         browser = await pw.chromium.launch(headless=True)
         try:
             results = await asyncio.gather(
-                *(sweep_viewport(browser, vp) for vp in VIEWPORTS),
+                *(sweep_viewport(browser, vp) for vp in viewports),
                 return_exceptions=True)
             for r in results:
                 if isinstance(r, Exception):
@@ -164,7 +185,7 @@ async def sweep(site_name: str, tier: str = "daily", silent: bool = False,
             async def recheck(u: str, vp: str) -> list[Finding]:
                 ctx = await fetch.new_context(browser, vp)
                 try:
-                    found, _, _ = await sweep_one(ctx, u, vp, cfg, baseline_root)
+                    found, _, _ = await sweep_one(ctx, u, vp, cfg, baseline_root, with_layout)
                     return found
                 finally:
                     await ctx.close()
@@ -180,7 +201,7 @@ async def sweep(site_name: str, tier: str = "daily", silent: bool = False,
     aged = report.escalations(log, now=now)
     report.save_log(log)
 
-    print(f"{site_label} {tier}: {len(urls)} urls x {len(VIEWPORTS)} viewports "
+    print(f"{site_label} {tier}: {len(urls)} urls x {len(viewports)} viewports "
           f"= {page_views} page views")
     print(f"  candidates {len(all_findings)} | provable {len(alertable)} | held {len(held)}")
     print(f"  new/reopened {len(worth_alerting)} | aged {len(aged)} | "

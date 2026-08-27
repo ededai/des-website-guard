@@ -18,8 +18,8 @@ from des2.checks_break import CONSOLE_NOISE, is_console_noise, is_resource_msg
 from des2.models import VIEWPORTS
 
 NAV_TIMEOUT_MS = 45000
-SETTLE_MS = 2000
-POLITE_PAUSE_S = 0.4      # same host, many pages: do not hammer it
+SETTLE_MS = 1400        # enough for lazy content; the checks scroll anyway
+POLITE_PAUSE_S = 0.8      # per lane; with four lanes this is ~0.5 req/s at the host
 
 
 @dataclass

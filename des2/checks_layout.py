@@ -182,6 +182,15 @@ async def check_element_overlap(page, url: str, viewport: str) -> list[Finding]:
         // Stacking is intentional design, not a collision.
         if (['fixed', 'absolute', 'sticky'].includes(cs.position)) continue;
         if (!el.textContent || !el.textContent.trim()) continue;
+
+        // Menus, dropdowns and carousels overlap ON PURPOSE, and a widget
+        // caught mid-animation overlaps for a moment whatever its design. The
+        // live run flagged the mega-menu Services button against the dropdown
+        // text it belongs to, and it flickered between sweeps, which is worse
+        // than a plain false positive: it looks like a new fault each time.
+        if (el.closest('nav, [class*=mega], [class*=dropdown], [class*=submenu], [class*=menu], [class*=carousel], [class*=slider], [class*=marquee], [aria-expanded="false"], [hidden]')) continue;
+        if ((cs.transitionDuration && cs.transitionDuration !== '0s') ||
+            (cs.animationName && cs.animationName !== 'none')) continue;
         cands.push({el, r: el.getBoundingClientRect()});
         if (cands.length >= 120) break;
       }

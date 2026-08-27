@@ -1,0 +1,108 @@
+name: Des v2 sweep
+
+# The regression guard defined in SPEC-V2.md. Sweeps the whole site at four
+# widths, reports only what it can prove, and never writes to the site.
+#
+# ALERTS ARE OFF UNTIL YOU TURN THEM ON. The loss-only model has nothing to
+# compare against on first contact, so it must learn baselines before it can
+# judge anything. Flip the repo variable DES_V2_ALERTS to "on" once a week of
+# quiet runs shows it behaving. No code change needed.
+#
+# This repo is PUBLIC, so Actions minutes are free and unmetered. Thoroughness
+# is not rationed here; the scarce resource is Ed's attention, which is spent
+# by the reporting layer, not by the sweeping.
+
+on:
+  schedule:
+    - cron: '30 22 * * *'   # 06:30 SGT daily
+    - cron: '0 22 * * 0'    # 06:00 SGT Monday, full sweep + heartbeat
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: daily or weekly
+        default: daily
+        type: choice
+        options: [daily, weekly]
+      silent:
+        description: run and learn baselines without sending anything
+        default: true
+        type: boolean
+
+permissions:
+  contents: write          # baselines and the bug log are committed back
+
+concurrency:
+  group: des-v2-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Pick tier from the schedule
+        id: tier
+        run: |
+          case "${{ github.event.schedule }}" in
+            "0 22 * * 0") echo "tier=weekly" >> $GITHUB_OUTPUT ;;
+            "30 22 * * *") echo "tier=daily" >> $GITHUB_OUTPUT ;;
+            *) echo "tier=${{ github.event.inputs.tier || 'daily' }}" >> $GITHUB_OUTPUT ;;
+          esac
+
+      - name: Sweep
+        id: sweep
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          # Manual runs default to silent; scheduled runs follow the repo
+          # variable, which starts unset and therefore silent.
+          SILENT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.silent || (vars.DES_V2_ALERTS == 'on' && 'false' || 'true') }}
+        run: |
+          FLAG=""
+          if [ "$SILENT" != "false" ]; then FLAG="--silent"; fi
+          python -m des2.run --site trw --tier "${{ steps.tier.outputs.tier }}" $FLAG
+
+      # Baselines ARE the memory. Without persisting them the guard starts
+      # every run amnesiac, and an amnesiac loss-only guard can never report
+      # anything at all.
+      - name: Persist baselines and the bug log
+        if: always()
+        run: |
+          git config user.name "des-bot"
+          git config user.email "des@users.noreply.github.com"
+          git add baselines/ bug-log-v2.jsonl 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "nothing changed"
+          else
+            git commit -m "des: baselines + bug log $(date -u +%Y-%m-%dT%H:%MZ) [skip ci]"
+            git push
+          fi
+
+      # Survives a completely broken Python environment: needs only curl and
+      # the secrets. Says "could not run", never "site is wrong", because a
+      # guard that failed is a different incident from a site that is broken,
+      # and confusing the two cost a morning in August 2026.
+      - name: Alarm if the guard itself could not run
+        if: failure() && steps.sweep.outcome != 'failure'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS --max-time 20 -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TG_CHAT_ID}" \
+            --data-urlencode "text=⚠️ Des v2: the sweep COULD NOT RUN (setup failure, not a site fault). The site was NOT checked. ${RUN_URL}" \
+            > /dev/null || echo "alarm failed to send"

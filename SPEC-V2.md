@@ -30,8 +30,19 @@ optional.
 
 ## 3. Coverage
 
-Daily: pages edited in the last 48h (WordPress reports this for free), PLUS one
-representative page per template. The template sample is essential, not a
+CORRECTED 2026-08-27. Daily sweeps THE WHOLE SITE, ordered by value: template
+pages first, then recently edited pages, then everything else. Viewports are
+320, 390, 768 and 1440; 320 is where layout actually breaks and was previously
+untested, as was tablet.
+
+The earlier design checked only changed pages plus a template sample, capped at
+40, to save Actions minutes. Wrong constraint from the wrong repo: Cole is
+private and metered, this one is public where minutes are free. It bought
+nothing and cost the ability to notice a quiet break on an unedited page.
+
+Still true, and the reason templates lead the order: pages edited in the last
+48h (WordPress reports this for free), plus one representative page per
+template. The template sample is essential, not a
 nicety: site-wide chrome is injected by Code Snippet 25, so it can break every
 page at once without a single page being "edited".
 
@@ -102,7 +113,11 @@ not nag.
 
 Daily targeted sweep, weekly full sweep. No publish-triggered runs.
 
-Cost discipline, per Ed's instruction to optimise rather than burn minutes:
+Cost discipline, CORRECTED 2026-08-27. This repo is public: Actions minutes are
+free and unmetered and never touch the private quota Cole's repo exhausted. The
+scarce resource is Ed's attention, not compute, so Des checks thoroughly and
+reports sparingly rather than the reverse. Efficiency below is about wall-clock
+time, not budget:
 - The repo is PUBLIC, so its Actions minutes do not touch the 2,000-minute
   private quota. Cost pressure is real but not billed the same way.
 - Plain HTTP for anything that does not need a browser. A browser is launched

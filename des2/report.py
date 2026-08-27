@@ -29,6 +29,12 @@ from des2.models import Finding
 
 SGT = timezone(timedelta(hours=8))
 BUG_LOG = "bug-log-v2.jsonl"
+
+# Reporting once and then going quiet forever means something can stay broken
+# and silent indefinitely, which is its own kind of lying. So an unfixed
+# finding earns another mention as it ages: once at a week, once harder at a
+# fortnight. Twice, not daily.
+ESCALATE_DAYS = (7, 14)
 OWNER_LABEL = {"bryan": "Bryan", "cole": "Cole", "codi": "Codi", "dom": "Dom"}
 
 
@@ -105,6 +111,53 @@ def reconcile(findings: Iterable[Finding], log: dict[str, dict],
     return log, worth_alerting
 
 
+def _age_days(rec: dict, now: datetime) -> float:
+    """Days since the finding last became a problem (reopening resets the clock)."""
+    stamp = rec.get("reopened_at") or rec.get("first_seen")
+    if not stamp:
+        return 0.0
+    try:
+        return (now - datetime.fromisoformat(stamp)).total_seconds() / 86400.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def escalations(log: dict[str, dict], now: Optional[datetime] = None) -> list[dict]:
+    """Open findings that have aged past a threshold they have not yet crossed.
+
+    Mutates the records to record the level reached, so each threshold fires
+    exactly once. Escalating by age rather than by repetition is the whole
+    point: a week-old broken booking form deserves another word, yesterday's
+    already-reported one does not.
+    """
+    now = now or datetime.now(SGT)
+    out = []
+    for rec in log.values():
+        if rec.get("status") not in ("open", "reopened"):
+            continue
+        age = _age_days(rec, now)
+        level = sum(1 for d in ESCALATE_DAYS if age >= d)
+        if level > int(rec.get("escalation_level", 0)):
+            rec["escalation_level"] = level
+            rec["escalated_at"] = now.isoformat()
+            out.append(rec)
+    return out
+
+
+def open_count(log: dict[str, dict]) -> int:
+    return sum(1 for r in log.values() if r.get("status") in ("open", "reopened"))
+
+
+def format_escalation(rec: dict, now: Optional[datetime] = None) -> str:
+    now = now or datetime.now(SGT)
+    days = int(_age_days(rec, now))
+    harder = "STILL BROKEN" if int(rec.get("escalation_level", 1)) >= 2 else "still broken"
+    return (f"⏳ Des: {harder} after {days} days\n"
+            f"{rec.get('summary', '')}\n"
+            f"Page: {rec.get('url', '')} ({rec.get('viewport', '')})\n"
+            f"In-charge: {OWNER_LABEL.get(rec.get('owner', ''), rec.get('owner', ''))}")
+
+
 # ---------------------------------------------------------------- messages
 def format_alert(f: Finding) -> str:
     ev = f.evidence
@@ -165,8 +218,15 @@ def heartbeat_due(now: Optional[datetime] = None) -> bool:
     return now.weekday() == 0
 
 
-def heartbeat_text(pages: int, site: str) -> str:
-    return (f"✅ Des: {site} checked, {pages} pages, nothing broken. "
+def heartbeat_text(pages: int, site: str, known_open: int = 0) -> str:
+    """The weekly all-clear, which must never hide a standing backlog.
+
+    Saying "nothing broken" while ten findings sit open would be the guard
+    flattering itself, so the count rides along.
+    """
+    tail = ("nothing new broken" if known_open else "nothing broken")
+    carry = f" {known_open} known issue(s) still open." if known_open else ""
+    return (f"✅ Des: {site} checked, {pages} pages, {tail}.{carry} "
             "(Weekly heartbeat. If a Monday passes with no message, the guard is not running.)")
 
 

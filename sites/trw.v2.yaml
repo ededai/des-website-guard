@@ -11,6 +11,7 @@ wp_api_base: https://therightworkshop.com/wp-json/wp/v2
 nav_selector: "nav.nav, .trw-injected-nav, header nav, nav:not([class*='bread']):not(.bc)"
 footer_selector: "footer, .trw-injected-footer"
 mobile_nav_toggle_selector: ".burger, #trwBurger, .nav-hamburger, #navHamburger"
+mobile_nav_max_width: 760   # above this TRW shows its desktop nav
 mobile_nav_panel_selector: ".mmenu, #trwMmenu, .mobile-nav, #mobileNav"
 
 # One page per template. This is the load-bearing half of the daily sweep:

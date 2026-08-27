@@ -112,19 +112,32 @@ def all_urls(site_cfg: dict, fetch: Callable[[str], str] = _fetch) -> list[str]:
     return out
 
 
-def daily_set(site_cfg: dict, since_hours: int = 48, cap: int = 40,
+# A runaway guard, not a budget. If a sitemap ever returns tens of thousands
+# of URLs something is wrong with the sitemap, not with our appetite.
+SAFETY_CAP = 2000
+
+
+def daily_set(site_cfg: dict, since_hours: int = 48, cap: int = SAFETY_CAP,
               now: Optional[datetime] = None,
               fetch: Callable[[str], str] = _fetch) -> tuple[list[str], int]:
-    """(urls, dropped). Templates first so the most valuable checks always run.
+    """(urls, dropped). THE WHOLE SITE, ordered by value.
 
-    Ordering matters: if a run is cut short, it must already have covered the
-    page types that reveal site-wide breakage. Truncation is REPORTED, never
-    silent, because a sweep that quietly covered less than it claims is how a
-    guard tells a comfortable lie.
+    Corrected 2026-08-27. This used to check only recently-edited pages plus a
+    template sample, capped at 40, to save GitHub Actions minutes. That was the
+    wrong constraint borrowed from the wrong repo: Cole is private and metered,
+    this one is public, where minutes are free and unmetered. Bounding coverage
+    bought nothing and cost the ability to notice a quiet break on a page
+    nobody had edited.
+
+    Ordering still matters, because a run can be cut short: template pages
+    first (they reveal site-wide chrome breakage), then recently edited pages
+    (regressions follow changes), then everything else.
     """
-    ordered = template_urls(site_cfg) + changed_urls(site_cfg, since_hours, now, fetch)
+    templates = template_urls(site_cfg)
+    changed = changed_urls(site_cfg, since_hours, now, fetch)
+    everything = all_urls(site_cfg, fetch)
     seen, uniq = set(), []
-    for u in ordered:
+    for u in templates + changed + everything:
         if u not in seen:
             seen.add(u)
             uniq.append(u)

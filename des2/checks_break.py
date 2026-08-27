@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-from des2.models import Evidence, Finding, owner_for
+from des2.models import Evidence, Finding, expects_mobile_nav, owner_for
 
 # Console lines that describe a RESOURCE, not a JavaScript fault. Excluded from
 # the JS check by construction so the two can never be confused again.
@@ -157,7 +157,10 @@ async def check_mobile_menu(page, url: str, viewport: str, site_cfg: dict) -> li
     so the check tapped a control no human can see and reported a critical
     fault across 73 healthy pages. Untappable candidates are skipped here.
     """
-    if viewport != "phone":
+    # Decided by width against the site's own breakpoint, not by a viewport
+    # name. Above the breakpoint the burger is hidden on purpose, so running
+    # this there would report "no tappable menu button" on every desktop page.
+    if not expects_mobile_nav(viewport, site_cfg):
         return []
     toggle = site_cfg.get("mobile_nav_toggle_selector")
     panel = site_cfg.get("mobile_nav_panel_selector")

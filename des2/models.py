@@ -14,13 +14,40 @@ from typing import Any, Literal, Optional
 Kind = Literal["breakage", "layout", "standard_lost"]
 Viewport = Literal["desktop", "phone"]
 
+# Four widths, not two. 320 is where layout actually breaks: it is the
+# narrowest width still in real use, and overflow that hides at 390 shows up
+# there immediately. 768 covers tablets, which were previously untested
+# entirely. Real mobile emulation with touch, never a narrow desktop window,
+# or mobile-only bugs never reproduce (2026-08 post-mortem).
 VIEWPORTS: dict[str, dict[str, Any]] = {
-    "desktop": {"width": 1440, "height": 900, "is_mobile": False},
-    # Real mobile emulation, not a narrow desktop window, or mobile-only bugs
-    # never reproduce (2026-08 post-mortem).
+    "phone_small": {"width": 320, "height": 568, "is_mobile": True,
+                    "has_touch": True, "device_scale_factor": 2},
     "phone": {"width": 390, "height": 844, "is_mobile": True,
               "has_touch": True, "device_scale_factor": 2},
+    "tablet": {"width": 768, "height": 1024, "is_mobile": True,
+               "has_touch": True, "device_scale_factor": 2},
+    "desktop": {"width": 1440, "height": 900, "is_mobile": False},
 }
+
+# Where the mobile drawer is expected to exist. Above this the site shows its
+# desktop nav and the burger is deliberately hidden, so asking "why is the
+# burger not tappable" there would manufacture a false positive on every page.
+DEFAULT_MOBILE_NAV_MAX_WIDTH = 760
+
+
+def viewport_width(name: str) -> int:
+    return int(VIEWPORTS.get(name, {}).get("width", 0))
+
+
+def is_touch(name: str) -> bool:
+    """Touch viewports are the ones where finger-sized targets matter."""
+    return bool(VIEWPORTS.get(name, {}).get("has_touch"))
+
+
+def expects_mobile_nav(name: str, site_cfg: dict | None = None) -> bool:
+    limit = (site_cfg or {}).get("mobile_nav_max_width") or DEFAULT_MOBILE_NAV_MAX_WIDTH
+    w = viewport_width(name)
+    return bool(w) and w <= int(limit)
 
 
 @dataclass
@@ -83,6 +110,11 @@ class Fingerprint:
     # Standards present on the page. Loss of one is a finding; never having had
     # it is backlog, not an alarm (SPEC 4).
     standards: dict[str, bool] = field(default_factory=dict)
+    # Layout defects the page ALREADY had when it was healthy, as stable keys.
+    # Longstanding design (36x36 social icons, 32x16 carousel dots) is not
+    # today's regression, and once the sweep covers every page these would
+    # otherwise arrive in their thousands on the first run.
+    layout_defects: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)

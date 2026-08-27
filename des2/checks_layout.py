@@ -16,7 +16,7 @@ Every check here obeys the same three rules:
 """
 from __future__ import annotations
 
-from des2.models import Evidence, Finding, owner_for
+from des2.models import Evidence, Finding, is_touch, owner_for
 
 # Sub-pixel rounding is not a defect. Browsers routinely differ by a fraction.
 SCROLL_TOLERANCE_PX = 2
@@ -256,7 +256,9 @@ async def check_tap_targets(page, url: str, viewport: str) -> list[Finding]:
     Hidden and zero-size elements are excluded, so a decorative or collapsed
     control is never reported as a too-small button.
     """
-    if viewport != "phone":
+    # Every touch width, not just the one called "phone". A thumb is the same
+    # size at 320 and at 768.
+    if not is_touch(viewport):
         return []
     rows = await _eval(page, _VISIBLE_FN + """(minPx) => {
       const out = [];

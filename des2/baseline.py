@@ -162,6 +162,11 @@ def capture(page_data: Any) -> Fingerprint:
         internal_links=_as_int(d.get("internal_links")),
         sections=_as_int(d.get("sections")),
         standards=_as_standards(d.get("standards")),
+        # Carried through so a saved baseline keeps its memory of which layout
+        # defects the page already had. load_baseline() rebuilds via capture(),
+        # so a field missing here is silently dropped on every reload.
+        layout_defects=sorted({str(k) for k in (d.get("layout_defects") or [])
+                               if isinstance(k, (str, int))}),
     )
 
 
@@ -453,3 +458,38 @@ def diff(
         ))
 
     return findings
+
+# ---------------------------------------------------------------------------
+# Layout: pre-existing versus new (added 2026-08-27)
+# ---------------------------------------------------------------------------
+def layout_key(finding) -> str:
+    """Stable identity for a layout defect, independent of exact pixel counts.
+
+    Measurements wobble by a pixel between runs, so keying on them would make
+    every defect look new every day. Element plus check is stable.
+    """
+    sel = (finding.evidence.selector or "").strip()
+    return f"{finding.check}|{sel}"
+
+
+def classify_layout(findings: list, old: Optional[Fingerprint]):
+    """(new, pre_existing). Only NEW layout defects deserve Ed's attention.
+
+    A first sight (no baseline) treats everything as pre-existing: the guard
+    has no idea what this page is supposed to look like yet, and announcing
+    every longstanding design choice as breakage on day one is precisely how a
+    guard loses its reader.
+    """
+    if old is None:
+        return [], list(findings)
+    known = set(old.layout_defects or [])
+    fresh, seen_before = [], []
+    for f in findings:
+        (seen_before if layout_key(f) in known else fresh).append(f)
+    return fresh, seen_before
+
+
+def remember_layout(fp: Fingerprint, findings: list) -> Fingerprint:
+    """Fold the layout defects seen this run into the fingerprint to be saved."""
+    fp.layout_defects = sorted({layout_key(f) for f in (findings or [])})
+    return fp

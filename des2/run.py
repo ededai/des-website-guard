@@ -111,21 +111,44 @@ async def sweep(site_name: str, tier: str = "daily", silent: bool = False,
     blocked = 0
     page_views = 0
 
+    # Viewports run concurrently, but only two at a time. Four would quadruple
+    # the request rate against a host that has bot-challenged our sweeps
+    # before (2026-08-02, when challenge pages were mistaken for 159 broken
+    # pages), and a guard that gets itself blocked measures nothing. Two halves
+    # the wall clock while keeping the load civil.
+    lane = asyncio.Semaphore(2)
+
+    async def sweep_viewport(browser, viewport):
+        found_all, blocked_n, views = [], 0, 0
+        async with lane:
+            context = await fetch.new_context(browser, viewport)
+            try:
+                for url in urls:
+                    found, was_blocked, _ = await sweep_one(
+                        context, url, viewport, cfg, baseline_root)
+                    found_all += found
+                    blocked_n += 1 if was_blocked else 0
+                    views += 1
+                    await fetch.polite_pause()
+            finally:
+                await context.close()
+        return found_all, blocked_n, views
+
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True)
         try:
-            for viewport in VIEWPORTS:
-                context = await fetch.new_context(browser, viewport)
-                try:
-                    for url in urls:
-                        found, was_blocked, _ = await sweep_one(
-                            context, url, viewport, cfg, baseline_root)
-                        all_findings += found
-                        blocked += 1 if was_blocked else 0
-                        page_views += 1
-                        await fetch.polite_pause()
-                finally:
-                    await context.close()
+            results = await asyncio.gather(
+                *(sweep_viewport(browser, vp) for vp in VIEWPORTS),
+                return_exceptions=True)
+            for r in results:
+                if isinstance(r, Exception):
+                    # One viewport failing must not lose the other three.
+                    print(f"  [viewport error] {type(r).__name__}: {str(r)[:120]}")
+                    continue
+                f, b, v = r
+                all_findings += f
+                blocked += b
+                page_views += v
 
             # A mostly-blocked sweep is not a measurement of anything.
             should_abort, why = gates.sweep_abort(blocked, page_views)

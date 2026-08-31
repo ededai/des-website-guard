@@ -1,6 +1,6 @@
 {
   "_format": 2,
-  "_saved_at": "2026-08-30T00:44:03+00:00",
+  "_saved_at": "2026-08-31T00:27:34+00:00",
   "_url": "https://therightworkshop.com/privacy/",
   "_viewport": "phone",
   "h1_count": 1,
@@ -9,7 +9,10 @@
   "images_ok": 4,
   "images_total": 4,
   "internal_links": 80,
-  "layout_defects": [],
+  "layout_defects": [
+    "tap_target_small|a",
+    "tap_target_small|a.footer-social-btn"
+  ],
   "sections": 0,
   "standards": {
     "address_unit": true,

@@ -1,6 +1,6 @@
 {
   "_format": 2,
-  "_saved_at": "2026-08-30T00:37:56+00:00",
+  "_saved_at": "2026-08-31T00:21:09+00:00",
   "_url": "https://therightworkshop.com/services/",
   "_viewport": "phone",
   "h1_count": 1,
@@ -9,7 +9,11 @@
   "images_ok": 32,
   "images_total": 32,
   "internal_links": 142,
-  "layout_defects": [],
+  "layout_defects": [
+    "tap_target_small|a",
+    "tap_target_small|button.rc-dot",
+    "tap_target_small|button.rc-dot.active"
+  ],
   "sections": 44,
   "standards": {
     "address_unit": true,
@@ -20,5 +24,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 7457
+  "text_len": 7445
 }

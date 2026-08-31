@@ -1,6 +1,6 @@
 {
   "_format": 2,
-  "_saved_at": "2026-08-30T00:47:11+00:00",
+  "_saved_at": "2026-08-31T00:30:58+00:00",
   "_url": "https://therightworkshop.com/coe-results/may-2026-2nd-bidding/",
   "_viewport": "phone",
   "h1_count": 1,
@@ -9,7 +9,11 @@
   "images_ok": 4,
   "images_total": 4,
   "internal_links": 95,
-  "layout_defects": [],
+  "layout_defects": [
+    "element_overlap|p",
+    "tap_target_small|a",
+    "tap_target_small|a.footer-social-btn"
+  ],
   "sections": 11,
   "standards": {
     "address_unit": true,

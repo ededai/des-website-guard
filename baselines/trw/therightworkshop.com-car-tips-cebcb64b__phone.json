@@ -1,6 +1,6 @@
 {
   "_format": 2,
-  "_saved_at": "2026-08-30T00:47:33+00:00",
+  "_saved_at": "2026-08-31T00:31:20+00:00",
   "_url": "https://therightworkshop.com/car-tips/",
   "_viewport": "phone",
   "h1_count": 1,
@@ -9,7 +9,10 @@
   "images_ok": 36,
   "images_total": 36,
   "internal_links": 116,
-  "layout_defects": [],
+  "layout_defects": [
+    "tap_target_small|a",
+    "tap_target_small|a.footer-social-btn"
+  ],
   "sections": 5,
   "standards": {
     "address_unit": true,
@@ -20,5 +23,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 4195
+  "text_len": 4295
 }

@@ -1,6 +1,6 @@
 {
   "_format": 2,
-  "_saved_at": "2026-08-30T00:40:55+00:00",
+  "_saved_at": "2026-08-31T00:24:21+00:00",
   "_url": "https://therightworkshop.com/blog/",
   "_viewport": "phone",
   "h1_count": 1,
@@ -9,7 +9,10 @@
   "images_ok": 60,
   "images_total": 60,
   "internal_links": 169,
-  "layout_defects": [],
+  "layout_defects": [
+    "tap_target_small|a",
+    "tap_target_small|a.footer-social-btn"
+  ],
   "sections": 6,
   "standards": {
     "address_unit": true,
@@ -20,5 +23,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 4879
+  "text_len": 4817
 }

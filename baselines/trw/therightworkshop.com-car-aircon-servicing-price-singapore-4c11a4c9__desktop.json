@@ -1,6 +1,6 @@
 {
   "_format": 2,
-  "_saved_at": "2026-08-30T00:40:40+00:00",
+  "_saved_at": "2026-08-31T00:22:42+00:00",
   "_url": "https://therightworkshop.com/car-aircon-servicing-price-singapore/",
   "_viewport": "desktop",
   "h1_count": 1,
@@ -9,7 +9,9 @@
   "images_ok": 11,
   "images_total": 11,
   "internal_links": 106,
-  "layout_defects": [],
+  "layout_defects": [
+    "element_overlap|li"
+  ],
   "sections": 8,
   "standards": {
     "address_unit": true,
@@ -20,5 +22,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 21661
+  "text_len": 21689
 }

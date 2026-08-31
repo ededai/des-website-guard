@@ -1,0 +1,27 @@
+{
+  "_format": 2,
+  "_saved_at": "2026-08-31T00:22:42+00:00",
+  "_url": "https://therightworkshop.com/check-engine-light-singapore-what-to-do/",
+  "_viewport": "tablet",
+  "h1_count": 1,
+  "has_footer": true,
+  "has_nav": true,
+  "images_ok": 11,
+  "images_total": 11,
+  "internal_links": 106,
+  "layout_defects": [
+    "tap_target_small|a",
+    "tap_target_small|a.footer-social-btn"
+  ],
+  "sections": 8,
+  "standards": {
+    "address_unit": true,
+    "alt_text": false,
+    "byline": false,
+    "canonical": true,
+    "h1": true,
+    "meta_description": true,
+    "title": true
+  },
+  "text_len": 22721
+}

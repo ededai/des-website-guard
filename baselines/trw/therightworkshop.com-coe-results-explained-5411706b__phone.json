@@ -1,6 +1,6 @@
 {
   "_format": 2,
-  "_saved_at": "2026-08-30T00:42:35+00:00",
+  "_saved_at": "2026-08-31T00:26:03+00:00",
   "_url": "https://therightworkshop.com/coe-results-explained/",
   "_viewport": "phone",
   "h1_count": 1,
@@ -9,7 +9,11 @@
   "images_ok": 11,
   "images_total": 11,
   "internal_links": 103,
-  "layout_defects": [],
+  "layout_defects": [
+    "element_overlap|p",
+    "tap_target_small|a",
+    "tap_target_small|a.footer-social-btn"
+  ],
   "sections": 8,
   "standards": {
     "address_unit": true,
@@ -20,5 +24,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 11886
+  "text_len": 11872
 }

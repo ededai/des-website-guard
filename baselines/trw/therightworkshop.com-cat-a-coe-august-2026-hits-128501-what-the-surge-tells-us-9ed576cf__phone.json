@@ -1,16 +1,16 @@
 {
   "_format": 2,
-  "_saved_at": "2026-09-01T01:22:03+00:00",
-  "_url": "https://therightworkshop.com/about/",
-  "_viewport": "desktop",
+  "_saved_at": "2026-09-01T01:22:19+00:00",
+  "_url": "https://therightworkshop.com/cat-a-coe-august-2026-hits-128501-what-the-surge-tells-us/",
+  "_viewport": "phone",
   "h1_count": 1,
   "has_footer": true,
   "has_nav": true,
   "images_ok": 7,
   "images_total": 7,
-  "internal_links": 113,
+  "internal_links": 97,
   "layout_defects": [],
-  "sections": 8,
+  "sections": 5,
   "standards": {
     "address_unit": true,
     "alt_text": false,
@@ -20,5 +20,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 6841
+  "text_len": 9140
 }

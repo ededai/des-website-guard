@@ -1,16 +1,16 @@
 {
   "_format": 2,
-  "_saved_at": "2026-09-06T00:18:27+00:00",
-  "_url": "https://therightworkshop.com/topics/maintenance/",
-  "_viewport": "desktop",
+  "_saved_at": "2026-09-06T00:06:59+00:00",
+  "_url": "https://therightworkshop.com/f1-singapore-gp-2026-road-closures-and-transport-guide/",
+  "_viewport": "phone",
   "h1_count": 1,
   "has_footer": true,
   "has_nav": true,
-  "images_ok": 27,
-  "images_total": 27,
-  "internal_links": 126,
+  "images_ok": 8,
+  "images_total": 8,
+  "internal_links": 100,
   "layout_defects": [],
-  "sections": 4,
+  "sections": 6,
   "standards": {
     "address_unit": true,
     "alt_text": false,
@@ -20,5 +20,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 7240
+  "text_len": 6524
 }

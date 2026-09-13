@@ -1,6 +1,6 @@
 {
   "_format": 2,
-  "_saved_at": "2026-09-12T00:27:34+00:00",
+  "_saved_at": "2026-09-13T00:07:44+00:00",
   "_url": "https://therightworkshop.com/coe-results/",
   "_viewport": "phone",
   "h1_count": 1,
@@ -8,7 +8,7 @@
   "has_nav": true,
   "images_ok": 7,
   "images_total": 7,
-  "internal_links": 111,
+  "internal_links": 116,
   "layout_defects": [
     "tap_target_small|a",
     "tap_target_small|a.footer-social-btn"
@@ -23,5 +23,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 7465
+  "text_len": 7561
 }

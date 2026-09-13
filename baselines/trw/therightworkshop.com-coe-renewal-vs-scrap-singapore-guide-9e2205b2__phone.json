@@ -1,6 +1,6 @@
 {
   "_format": 2,
-  "_saved_at": "2026-09-12T00:33:23+00:00",
+  "_saved_at": "2026-09-13T00:10:00+00:00",
   "_url": "https://therightworkshop.com/coe-renewal-vs-scrap-singapore-guide/",
   "_viewport": "phone",
   "h1_count": 1,
@@ -8,7 +8,7 @@
   "has_nav": true,
   "images_ok": 11,
   "images_total": 11,
-  "internal_links": 103,
+  "internal_links": 108,
   "layout_defects": [
     "element_overlap|p",
     "tap_target_small|a",
@@ -24,5 +24,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 22270
+  "text_len": 22480
 }

@@ -1,6 +1,6 @@
 {
   "_format": 2,
-  "_saved_at": "2026-09-12T00:34:22+00:00",
+  "_saved_at": "2026-09-13T00:10:22+00:00",
   "_url": "https://therightworkshop.com/brands/mercedes-benz/",
   "_viewport": "phone",
   "h1_count": 1,
@@ -8,7 +8,7 @@
   "has_nav": true,
   "images_ok": 11,
   "images_total": 11,
-  "internal_links": 107,
+  "internal_links": 111,
   "layout_defects": [
     "tap_target_small|a",
     "tap_target_small|a.footer-social-btn"
@@ -23,5 +23,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 15289
+  "text_len": 16145
 }

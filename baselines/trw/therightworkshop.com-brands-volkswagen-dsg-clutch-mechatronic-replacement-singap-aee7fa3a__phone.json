@@ -1,6 +1,6 @@
 {
   "_format": 2,
-  "_saved_at": "2026-09-13T00:08:29+00:00",
+  "_saved_at": "2026-09-14T00:20:13+00:00",
   "_url": "https://therightworkshop.com/brands/volkswagen/dsg-clutch-mechatronic-replacement-singapore/",
   "_viewport": "phone",
   "h1_count": 1,
@@ -9,7 +9,10 @@
   "images_ok": 4,
   "images_total": 4,
   "internal_links": 94,
-  "layout_defects": [],
+  "layout_defects": [
+    "element_overlap|p",
+    "tap_target_small|a"
+  ],
   "sections": 14,
   "standards": {
     "address_unit": true,
@@ -20,5 +23,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 16100
+  "text_len": 16108
 }

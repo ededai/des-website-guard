@@ -33,7 +33,7 @@ sys.path.insert(0, str(ROOT))
 from src.devices import DEVICES
 from src.sitemap import discover_urls, filter_skip
 from src import crawl_guard
-from checks import content_rules, visual, recheck
+from checks import content_rules, visual, recheck, tls
 from reporters import telegram, bug_log, evidence, alert_queue, screenshot, html_report
 
 
@@ -352,6 +352,17 @@ async def reproduce_finding(pw, finding, site, guard, sitemap_urls=None):
     if not urls:
         return False
 
+    # Site-level TLS ids (checks/tls.py) come from a raw socket handshake, not
+    # a rendered page, so re-verify with a fresh handshake rather than a page
+    # load: render_and_check() can never emit them and would read as "did not
+    # reproduce" — silently downgrading a real certificate failure to medium.
+    if check_id in tls.CHECK_IDS:
+        try:
+            again = tls.check_site_tls(site)
+        except Exception:
+            return False
+        return any(f["check"] == check_id for f in again)
+
     if check_id in recheck.REGISTRY:
         record = {"check_id": check_id, "severity": finding.get("severity", "high"), "url_list": urls}
         try:
@@ -522,7 +533,10 @@ async def route(finding, dry_run=False, report_url=None, reproduce_fn=None, tota
             return  # medium/low handled in send_digests() after the sweep finishes
 
         # --- Gate 2: mass-finding plausibility gate --------------------
-        if total_pages:
+        # Site-level checks (TLS) probe 2-3 hosts, not pages; their URL count
+        # says nothing about page coverage, so the pages ratio must not judge
+        # them (a --limit 2 test run would otherwise bury a real cert failure).
+        if total_pages and check_id not in tls.CHECK_IDS:
             n = len(finding["urls"])
             if n / total_pages > 0.5:
                 sample = ", ".join(finding["urls"][:3])
@@ -682,6 +696,16 @@ async def main():
 
     from playwright.async_api import async_playwright
     all_findings = []
+
+    # Site-level TLS health, every tier, before any page render. A verified
+    # handshake failure or an expiring certificate is a whole-site outage in
+    # the making and must never wait for the deep sweep (checks/tls.py).
+    try:
+        all_findings.extend(tls.check_site_tls(site))
+    except Exception as e:
+        all_findings.append({"url": site["url"], "viewport": "n/a", "check": "check_error_tls",
+                             "severity": "low", "evidence": f"tls check crashed: {e}"})
+
     async with async_playwright() as pw:
         for idx, u in enumerate(urls):
             if idx:

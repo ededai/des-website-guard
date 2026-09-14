@@ -178,6 +178,50 @@ async def test_menu_check_does_not_run_on_desktop():
     assert await cb.check_mobile_menu(FakePage([]), URL, "desktop", cfg) == []
 
 
+# ------------------------------------------------ THE regression: wpautop false positive
+def test_ordinary_section_closing_is_not_an_autop_finding():
+    """The dropped weak signature, pinned as a regression.
+
+    `</p>\\s*</div>\\s*</section>` matched 121 of 211 TRW pages with zero real
+    damage (T-1, deep-sweep-2026-09-13.md) because it also matches a
+    perfectly ordinary hand-authored paragraph closing at the end of a
+    section. It must never fire again.
+    """
+    html = "<section><div><p>worth more than knowing the trim level.</p>   </div> </section>"
+    assert cb.check_autop_injection(html, URL, "desktop") == []
+
+
+def test_card_anchor_closed_by_p_is_reported():
+    html = '<a class="brand-card" href="/x"></p><p>next</p>'
+    out = cb.check_autop_injection(html, URL, "desktop")
+    assert len(out) == 1 and out[0].check == "autop_injection"
+    assert "card_anchor_closed_by_p" in out[0].evidence.note
+    assert out[0].owner == "bryan"
+
+
+def test_p_closing_anchor_is_reported():
+    html = "<a href='/x'>text<p></a>"
+    out = cb.check_autop_injection(html, URL, "desktop")
+    assert len(out) == 1 and "p_closing_anchor" in out[0].evidence.note
+
+
+def test_p_wrapped_script_and_comment_are_reported():
+    for html in ("<p><script>alert(1)</script></p>", "<p><!-- broken --></p>"):
+        out = cb.check_autop_injection(html, URL, "desktop")
+        assert len(out) == 1 and "p_wrapped_script_or_comment" in out[0].evidence.note
+
+
+def test_clean_html_is_silent():
+    html = "<html><body><section><article><p>Hello world.</p></article></section></body></html>"
+    assert cb.check_autop_injection(html, URL, "desktop") == []
+
+
+def test_autop_finding_can_prove_itself_and_is_not_prereproduced():
+    out = cb.check_autop_injection("<p><!--x", URL, "desktop")
+    assert out[0].evidence.is_hard()
+    assert out[0].reproduced is False
+
+
 def test_every_breakage_finding_can_prove_itself():
     produced = (cb.check_page_error(500, URL, "desktop")
                 + cb.check_resource_failures([("https://therightworkshop.com/a.jpg", 404)], URL, "desktop")

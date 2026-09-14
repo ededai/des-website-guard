@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from des2 import baseline as bl
 from des2 import checks_break as cb
 from des2 import checks_layout as cl
-from des2 import fetch, gates, report, verify
+from des2 import fetch, gates, html_report, report, verify
 from des2.config import load_site
 from des2.discover import all_urls, daily_set
 from des2.models import VIEWPORTS, Finding
@@ -45,6 +45,7 @@ async def check_page(page, v, site_cfg, with_layout: bool = True) -> list[Findin
     out += cb.check_resource_failures(v.net_failures, v.url, v.viewport)
     out += cb.check_js_errors(
         [e for e in v.console_errors if not cb.is_resource_msg(e)], v.url, v.viewport)
+    out += cb.check_autop_injection(v.html, v.url, v.viewport)
     out += await cb.check_chrome(page, v.url, v.viewport, site_cfg)
     out += await cb.check_broken_images(page, v.url, v.viewport)
     out += await cb.check_mobile_menu(page, v.url, v.viewport, site_cfg)
@@ -200,6 +201,19 @@ async def sweep(site_name: str, tier: str = "daily", silent: bool = False,
     log, worth_alerting = report.reconcile(alertable, log, now=now, swept_urls=swept)
     aged = report.escalations(log, now=now)
     report.save_log(log)
+
+    # The visual record every Telegram alert implicitly points at (T-3,
+    # deep-sweep-2026-09-13.md). A report-writer bug must never take down an
+    # otherwise-healthy sweep, so this degrades to a printed warning instead
+    # of raising -- same rule as the rest of this module's I/O.
+    try:
+        report_file = html_report.build(
+            site_name, tier, alertable, len(urls),
+            open_count=report.open_count(log), escalations=aged, started=now)
+        deleted = html_report.prune(site_name)
+        print(f"  report: {report_file}" + (f" (pruned {len(deleted)} old)" if deleted else ""))
+    except Exception as e:
+        print(f"  [warn] html report failed: {type(e).__name__}: {str(e)[:150]}")
 
     print(f"{site_label} {tier}: {len(urls)} urls x {len(viewports)} viewports "
           f"= {page_views} page views")

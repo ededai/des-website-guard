@@ -149,6 +149,7 @@ OWNER_BY_CHECK: dict[str, str] = {
     "mobile_menu_dead": "codi",
     "booking_path_dead": "codi",
     "js_error": "codi",
+    "autop_injection": "bryan",
     "text_overflow": "codi",
     "horizontal_scroll": "codi",
     "element_overlap": "codi",

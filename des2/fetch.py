@@ -21,6 +21,27 @@ NAV_TIMEOUT_MS = 45000
 SETTLE_MS = 1400        # enough for lazy content; the checks scroll anyway
 POLITE_PAUSE_S = 0.8      # per lane; with four lanes this is ~0.5 req/s at the host
 
+# Playwright's default headless context sends its own HeadlessChrome UA, and
+# Cloudflare 403s that on every non-mobile request ("checking your browser"),
+# costing a 5s backoff-then-retry on every desktop/laptop page. A current
+# real Chrome-on-Mac UA plus matching client hints turns that into a 200 on
+# the first request (deep-sweep-2026-09-13.md, T-2). Mobile contexts are
+# unaffected -- Playwright's device UA already reads as real Mobile Safari.
+#
+# Deliberately NOT included: Upgrade-Insecure-Requests. Playwright replays
+# extra context headers on CORS preflights too, which makes fonts.gstatic.com
+# and cloudflareinsights.com fail and fabricates a console_errors finding on
+# every page. Hit and removed the hard way on 2026-09-13; do not re-add it.
+DESKTOP_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+              "AppleWebKit/537.36 (KHTML, like Gecko) "
+              "Chrome/128.0.0.0 Safari/537.36")
+DESKTOP_HEADERS = {
+    "Sec-CH-UA": '"Chromium";v="128", "Not;A=Brand";v="24", "Google Chrome";v="128"',
+    "Sec-CH-UA-Mobile": "?0",
+    "Sec-CH-UA-Platform": '"macOS"',
+    "Accept-Language": "en-SG,en;q=0.9",
+}
+
 
 @dataclass
 class Visit:
@@ -40,6 +61,8 @@ async def new_context(browser, viewport: str):
     if vp.get("is_mobile"):
         args.update(is_mobile=True, has_touch=True,
                     device_scale_factor=vp.get("device_scale_factor", 2))
+    else:
+        args.update(user_agent=DESKTOP_UA, extra_http_headers=DESKTOP_HEADERS)
     return await browser.new_context(**args)
 
 

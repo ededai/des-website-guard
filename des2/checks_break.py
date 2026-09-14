@@ -12,6 +12,7 @@ always with the exact URL. Console text is never evidence of a resource fault.
 """
 from __future__ import annotations
 
+import re
 from urllib.parse import urlparse
 
 from des2.models import Evidence, Finding, expects_mobile_nav, owner_for
@@ -32,6 +33,21 @@ FIRST_PARTY_EXTRA_HOSTS = {"i0.wp.com", "i1.wp.com", "i2.wp.com", "i3.wp.com"}
 
 MAX_PER_CHECK = 5          # one broken template must not become a hundred findings
 MIN_TAP_TARGET_PX = 44
+
+# wpautop injection signatures (feedback_wp90_autop_fix_rule). Each of these
+# can only occur when wpautop has run over raw HTML and broken an anchor or
+# card. The weaker `</p>\s*</div>\s*</section>` pattern, once proposed for
+# this list, is deliberately excluded: it matches a perfectly ordinary
+# paragraph closing at the end of a hand-authored section and hit 121 of 211
+# TRW pages with zero real damage while the signatures below hit zero
+# (T-1, deep-sweep-2026-09-13.md). Dropped rather than paired with an
+# anchor-breakage condition, because these three ARE the anchor-breakage
+# condition already.
+AUTOP_SIGNATURES = (
+    ("card_anchor_closed_by_p", re.compile(r'<a class="[a-z-]*-card"[^>]*></p>')),
+    ("p_closing_anchor", re.compile(r"<p>\s*</a>")),
+    ("p_wrapped_script_or_comment", re.compile(r"<p>(?:<script|<!--)")),
+)
 
 
 def is_resource_msg(text: str) -> bool:
@@ -96,6 +112,23 @@ def check_js_errors(console_errors, url: str, viewport: str,
         if len(out) >= MAX_PER_CHECK:
             break
     return out
+
+
+def check_autop_injection(html: str, url: str, viewport: str) -> list[Finding]:
+    """wpautop having run over raw HTML, breaking an anchor or card. High
+    severity: this is markup damage, not a content edit, and it is the
+    in-charge who owns copy (not chrome) who needs to know.
+    """
+    if not html:
+        return []
+    hits = [name for name, rx in AUTOP_SIGNATURES if rx.search(html)]
+    if not hits:
+        return []
+    return [_f("autop_injection", url, viewport,
+               "wpautop signature found: markup looks broken by autop, not hand-authored",
+               Evidence(numbers={"signatures_matched": len(hits)},
+                        note=f"signatures: {', '.join(hits)}; "
+                             "wrap the raw HTML in a wp:html block"))]
 
 
 async def check_broken_images(page, url: str, viewport: str) -> list[Finding]:

@@ -1,6 +1,6 @@
 {
   "_format": 2,
-  "_saved_at": "2026-09-15T00:49:29+00:00",
+  "_saved_at": "2026-09-16T00:39:51+00:00",
   "_url": "https://therightworkshop.com/f1-singapore-gp-2026-road-closures-and-transport-guide/",
   "_viewport": "phone",
   "h1_count": 1,
@@ -8,7 +8,7 @@
   "has_nav": true,
   "images_ok": 8,
   "images_total": 8,
-  "internal_links": 100,
+  "internal_links": 99,
   "layout_defects": [
     "tap_target_small|a",
     "tap_target_small|a.footer-social-btn"
@@ -23,5 +23,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 6961
+  "text_len": 6948
 }

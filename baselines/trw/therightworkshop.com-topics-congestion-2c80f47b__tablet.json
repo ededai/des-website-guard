@@ -1,14 +1,14 @@
 {
   "_format": 2,
-  "_saved_at": "2026-09-14T00:09:15+00:00",
+  "_saved_at": "2026-09-21T00:07:49+00:00",
   "_url": "https://therightworkshop.com/topics/congestion/",
   "_viewport": "tablet",
   "h1_count": 1,
   "has_footer": true,
   "has_nav": true,
-  "images_ok": 8,
-  "images_total": 8,
-  "internal_links": 107,
+  "images_ok": 7,
+  "images_total": 7,
+  "internal_links": 106,
   "layout_defects": [
     "tap_target_small|a",
     "tap_target_small|a.footer-social-btn"
@@ -23,5 +23,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 2191
+  "text_len": 1935
 }

@@ -155,8 +155,8 @@ gates, crawl-blocked detection, the network-log resource check, the mobile
 menu selector contract (both chrome generations), and their tests. Delete the
 audit-everything-against-standards shape that kept pulling toward noise.
 
-The repo URL must stay alive: Cole's qa-coe-chart workflow downloads
-qa_coe_chart.py from its raw URL.
+The COE chart check runs here since 2026-09-29 (.github/workflows/qa-coe-chart.yml),
+moved from Cole's repo because public-repo minutes are free.
 
 Des does NOT move into Cole's repo. Cole's is private and metered, and a
 watcher living inside the thing it watches can be silenced by the same broken

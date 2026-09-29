@@ -26,6 +26,7 @@ Skill: `~/.claude/skills/des-website-guard/SKILL.md`
 | Daily critical | `0 0 * * *` | Top 20 pages, critical only |
 | Weekly critical | `0 22 * * 0` (Mon 06:00 SGT) | Full sitemap, critical + high |
 | Bi-weekly deep | `0 15 1,15 * *` (1st + 15th, 23:00 SGT) | Full sitemap, all viewports, all checks |
+| Daily COE chart | `30 0 * * *` (08:30 SGT) | /coe-results/ chart render check (`qa_coe_chart.py`, `.github/workflows/qa-coe-chart.yml`) |
 
 ## Sites registered
 

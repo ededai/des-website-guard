@@ -1,0 +1,40 @@
+name: "QA: COE Chart Health (Des)"
+
+# Daily READ-ONLY render check of the COE chart on /coe-results/. Pings Telegram
+# ONLY on a regression (e.g. the mobile portrait fix reverting); silent on pass.
+# Moved from trw-cole on 2026-09-29 because public-repo minutes are free.
+# The SVG is drawn client-side, so Playwright's headless Chromium gives the
+# script a real DOM; without it qa_coe_chart.py degrades to a server-markers pass.
+
+on:
+  schedule:
+    - cron: '30 0 * * *'   # 08:30 SGT daily (SGT = UTC+8)
+  workflow_dispatch:
+
+permissions:
+  contents: read           # READ-ONLY guard, never writes to the repo or the site
+
+concurrency:
+  group: des-qa-coe-chart
+  cancel-in-progress: false
+
+jobs:
+  qa-coe-chart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: |
+          pip install "requests>=2.32" "playwright>=1.49"
+          python -m playwright install --with-deps chromium
+      - name: Run COE chart health check
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        # Exit 0 = pass (silent). Exit 1 = a check failed and the script has
+        # already sent the Telegram alert, so the run shows red.
+        run: python qa_coe_chart.py

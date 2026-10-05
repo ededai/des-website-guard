@@ -1,6 +1,6 @@
 {
   "_format": 2,
-  "_saved_at": "2026-10-04T01:58:05+00:00",
+  "_saved_at": "2026-10-05T00:54:43+00:00",
   "_url": "https://therightworkshop.com/brands/audi/a4-b8-b9-common-problems-singapore/",
   "_viewport": "desktop",
   "h1_count": 1,
@@ -10,7 +10,7 @@
   "images_total": 4,
   "internal_links": 99,
   "layout_defects": [
-    "element_overlap|li"
+    "element_overlap|p"
   ],
   "sections": 11,
   "standards": {
@@ -22,5 +22,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 17518
+  "text_len": 17513
 }

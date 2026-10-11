@@ -1,6 +1,6 @@
 {
   "_format": 2,
-  "_saved_at": "2026-10-05T01:24:10+00:00",
+  "_saved_at": "2026-10-11T01:07:53+00:00",
   "_url": "https://therightworkshop.com/topics/wheel-alignment/",
   "_viewport": "phone",
   "h1_count": 1,
@@ -8,7 +8,7 @@
   "has_nav": true,
   "images_ok": 8,
   "images_total": 8,
-  "internal_links": 93,
+  "internal_links": 113,
   "layout_defects": [
     "tap_target_small|a",
     "tap_target_small|a.footer-social-btn"
@@ -23,5 +23,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 2178
+  "text_len": 2449
 }

@@ -38,7 +38,7 @@ drawer_panel_light: true
 required_byline: "Reviewed by The Right Workshop team"
 
 address_marker: "Kaki Bukit"
-address_unit: "#02-61"
+address_unit: "#03-38"
 
 # Pages that legitimately have no breadcrumb (top-level hubs / homepage)
 bc_exempt_slugs:

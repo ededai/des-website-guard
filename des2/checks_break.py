@@ -89,6 +89,37 @@ def check_page_error(status, url: str, viewport: str) -> list[Finding]:
                f"page returned HTTP {status}", Evidence(status=int(status), resource=url))]
 
 
+SITEMAP_MARKERS = ("<urlset", "<sitemapindex")
+
+
+def check_sitemap(status, body: str, url: str) -> list[Finding]:
+    """The XML sitemap answers 200 with sitemap XML.
+
+    Judged from a plain fetch, not a browser: a sitemap is a file, and the
+    only two ways it fails are a non-200 status or a 200 carrying the theme's
+    HTML (a cached error page). A transport failure arrives as None and is not
+    judged here, because that is the guard failing to reach the site, not the
+    site failing.
+
+    Why it exists: from 5 to 28 Oct 2026 sitemap_index.xml returned the 404
+    page. Discovery shrank to templates plus recent edits without a word,
+    Google found none of October's pages, and every sweep stayed green.
+    """
+    if not url or status is None:
+        return []
+    if int(status) != 200:
+        return [_f("sitemap_unreachable", url, "desktop",
+                   f"sitemap returned HTTP {status}; Google and the guard both read from it",
+                   Evidence(resource=url, status=int(status)))]
+    head = (body or "")[:4000]
+    if not any(m in head for m in SITEMAP_MARKERS):
+        return [_f("sitemap_unreachable", url, "desktop",
+                   "sitemap URL answered 200 but not with sitemap XML",
+                   Evidence(resource=url, status=200,
+                            note=re.sub(r"\s+", " ", head[:160]).strip()))]
+    return []
+
+
 def check_resource_failures(failures, url: str, viewport: str) -> list[Finding]:
     """First-party subresources that answered >= 400, straight from the network log."""
     out = []

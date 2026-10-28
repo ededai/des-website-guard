@@ -142,6 +142,7 @@ class Observation:
 OWNER_BY_CHECK: dict[str, str] = {
     "page_error": "codi",
     "crawl_blocked": "codi",
+    "sitemap_unreachable": "codi",
     "resource_404": "codi",
     "broken_images": "dom",
     "missing_nav": "codi",

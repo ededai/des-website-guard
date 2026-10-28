@@ -32,7 +32,7 @@ from des2 import checks_break as cb
 from des2 import checks_layout as cl
 from des2 import fetch, gates, html_report, report, verify
 from des2.config import load_site
-from des2.discover import all_urls, daily_set
+from des2.discover import all_urls, daily_set, fetch_status
 from des2.models import VIEWPORTS, Finding
 
 SGT = timezone(timedelta(hours=8))
@@ -103,12 +103,47 @@ async def sweep_one(context, url: str, viewport: str, site_cfg, baseline_root,
             pass
 
 
+async def probe_sitemap(cfg: dict) -> tuple[list[Finding], bool]:
+    """The sitemap, checked as a thing in its own right.
+
+    It is both the guard's map and Google's. When it broke on 5 Oct 2026 the
+    daily set quietly shrank to templates plus recent edits, the weekly sweep
+    refused to run, and Google found none of October's pages for 23 days,
+    while every run stayed green. So it is probed before discovery, and
+    re-probed after a pause so a single blip cannot alert on its own; the
+    page-level verify pass cannot do that job, because it re-tests by loading
+    a page and this is a file.
+
+    Returns (findings, probed). probed is False when the site could not be
+    reached at all, which is a transport problem and not the site's fault.
+    """
+    url = cfg.get("sitemap_url")
+    if not url:
+        return [], False
+    status, body = fetch_status(url)
+    if status is None:
+        return [], False
+    first = cb.check_sitemap(status, body, url)
+    if not first:
+        return [], True
+    await fetch.polite_pause(scale=4.0)
+    status, body = fetch_status(url)
+    again = {f.key() for f in cb.check_sitemap(status, body, url)} if status is not None else set()
+    for f in first:
+        f.reproduced = f.key() in again
+    return first, True
+
+
 async def sweep(site_name: str, tier: str = "daily", silent: bool = False,
                 limit: int | None = None, now=None) -> int:
     now = now or datetime.now(SGT)
     cfg = load_site(site_name)
     site_label = cfg.get("name", site_name)
     baseline_root = os.path.join("baselines", site_name)
+
+    sitemap_findings, sitemap_probed = await probe_sitemap(cfg)
+    for f in sitemap_findings:
+        print(f"  [sitemap] {f.summary} ({f.evidence.resource})")
 
     # SPLIT BY VALUE (2026-08-27). Functional breakage is cheap to check and
     # matters every day. Layout is the expensive half (five checks across four
@@ -120,6 +155,10 @@ async def sweep(site_name: str, tier: str = "daily", silent: bool = False,
     viewports = list(VIEWPORTS) if with_layout else ["desktop", "phone"]
 
     urls = (all_urls(cfg) if tier == "weekly" else daily_set(cfg, now=now)[0])
+    if not urls and sitemap_findings:
+        # The map is broken. Sweep what WordPress can still name rather than
+        # refuse, so that the broken map itself gets reported.
+        urls = daily_set(cfg, now=now)[0]
     if limit:
         urls = urls[:limit]
     if not urls:
@@ -195,9 +234,13 @@ async def sweep(site_name: str, tier: str = "daily", silent: bool = False,
         finally:
             await browser.close()
 
+    # Already re-probed in probe_sitemap, so it joins after the page verify.
+    all_findings += sitemap_findings
     alertable, held = verify.partition(all_findings)
     log = report.load_log()
     swept = set(urls)
+    if sitemap_probed:
+        swept.add(cfg["sitemap_url"])    # so a repaired sitemap auto-closes
     log, worth_alerting = report.reconcile(alertable, log, now=now, swept_urls=swept)
     aged = report.escalations(log, now=now)
     report.save_log(log)

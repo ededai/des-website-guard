@@ -36,6 +36,23 @@ def _fetch(url: str, timeout: int = 30) -> str:
         return resp.read().decode("utf-8", "replace")
 
 
+def fetch_status(url: str, timeout: int = 30) -> tuple[Optional[int], str]:
+    """(status, body) for a plain file such as the sitemap.
+
+    A transport failure is (None, ''), so a caller can tell "no answer" (the
+    guard's problem) from "the wrong answer" (the site's problem). `_fetch`
+    cannot make that distinction: it raises on both.
+    """
+    req = urllib.request.Request(url, headers=UA)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, ""
+    except Exception:
+        return None, ""
+
+
 def _skip(url: str, patterns: list[str]) -> bool:
     for p in patterns or []:
         try:

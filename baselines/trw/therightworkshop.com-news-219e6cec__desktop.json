@@ -1,13 +1,13 @@
 {
   "_format": 2,
-  "_saved_at": "2026-10-07T01:53:53+00:00",
+  "_saved_at": "2026-10-29T02:08:54+00:00",
   "_url": "https://therightworkshop.com/news/",
   "_viewport": "desktop",
   "h1_count": 1,
   "has_footer": true,
   "has_nav": true,
-  "images_ok": 39,
-  "images_total": 39,
+  "images_ok": 40,
+  "images_total": 40,
   "internal_links": 150,
   "layout_defects": [],
   "sections": 7,
@@ -20,5 +20,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 6180
+  "text_len": 6141
 }

@@ -1,6 +1,6 @@
 {
   "_format": 2,
-  "_saved_at": "2026-10-29T02:01:15+00:00",
+  "_saved_at": "2026-10-30T02:06:22+00:00",
   "_url": "https://therightworkshop.com/coe-explained/",
   "_viewport": "phone",
   "h1_count": 1,
@@ -8,7 +8,7 @@
   "has_nav": true,
   "images_ok": 11,
   "images_total": 11,
-  "internal_links": 107,
+  "internal_links": 108,
   "layout_defects": [
     "element_overlap|p",
     "tap_target_small|a",
@@ -24,5 +24,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 11790
+  "text_len": 12680
 }

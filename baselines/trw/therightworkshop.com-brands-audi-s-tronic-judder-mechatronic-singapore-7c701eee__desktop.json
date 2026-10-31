@@ -1,6 +1,6 @@
 {
   "_format": 2,
-  "_saved_at": "2026-10-31T01:49:34+00:00",
+  "_saved_at": "2026-10-31T03:04:14+00:00",
   "_url": "https://therightworkshop.com/brands/audi/s-tronic-judder-mechatronic-singapore/",
   "_viewport": "desktop",
   "h1_count": 1,
@@ -8,12 +8,12 @@
   "has_nav": true,
   "images_ok": 4,
   "images_total": 4,
-  "internal_links": 95,
+  "internal_links": 104,
   "layout_defects": [
     "element_overlap|li",
     "element_overlap|p"
   ],
-  "sections": 11,
+  "sections": 12,
   "standards": {
     "address_unit": true,
     "alt_text": false,
@@ -23,5 +23,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 14419
+  "text_len": 15346
 }

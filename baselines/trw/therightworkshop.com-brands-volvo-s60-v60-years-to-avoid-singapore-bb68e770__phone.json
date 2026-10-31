@@ -1,6 +1,6 @@
 {
   "_format": 2,
-  "_saved_at": "2026-10-31T01:50:28+00:00",
+  "_saved_at": "2026-10-31T03:04:22+00:00",
   "_url": "https://therightworkshop.com/brands/volvo/s60-v60-years-to-avoid-singapore/",
   "_viewport": "phone",
   "h1_count": 1,
@@ -8,13 +8,13 @@
   "has_nav": true,
   "images_ok": 4,
   "images_total": 4,
-  "internal_links": 99,
+  "internal_links": 108,
   "layout_defects": [
     "element_overlap|p",
     "tap_target_small|a",
     "tap_target_small|a.footer-social-btn"
   ],
-  "sections": 10,
+  "sections": 11,
   "standards": {
     "address_unit": true,
     "alt_text": false,
@@ -24,5 +24,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 14773
+  "text_len": 15700
 }

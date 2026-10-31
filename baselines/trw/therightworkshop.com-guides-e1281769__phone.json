@@ -1,14 +1,14 @@
 {
   "_format": 2,
-  "_saved_at": "2026-10-30T02:24:12+00:00",
+  "_saved_at": "2026-10-31T02:00:26+00:00",
   "_url": "https://therightworkshop.com/guides/",
   "_viewport": "phone",
   "h1_count": 1,
   "has_footer": true,
   "has_nav": true,
-  "images_ok": 48,
-  "images_total": 48,
-  "internal_links": 128,
+  "images_ok": 50,
+  "images_total": 50,
+  "internal_links": 130,
   "layout_defects": [
     "tap_target_small|a",
     "tap_target_small|a.footer-social-btn"
@@ -23,5 +23,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 4322
+  "text_len": 4284
 }

@@ -1,14 +1,14 @@
 {
   "_format": 2,
-  "_saved_at": "2026-11-02T01:35:54+00:00",
+  "_saved_at": "2026-11-03T03:50:14+00:00",
   "_url": "https://therightworkshop.com/topics/engine/",
   "_viewport": "phone",
   "h1_count": 1,
   "has_footer": true,
   "has_nav": true,
-  "images_ok": 15,
-  "images_total": 15,
-  "internal_links": 120,
+  "images_ok": 20,
+  "images_total": 20,
+  "internal_links": 125,
   "layout_defects": [
     "tap_target_small|a",
     "tap_target_small|a.footer-social-btn"
@@ -23,5 +23,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 4013
+  "text_len": 5213
 }

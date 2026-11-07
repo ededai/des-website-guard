@@ -1,14 +1,14 @@
 {
   "_format": 2,
-  "_saved_at": "2026-11-06T02:54:39+00:00",
+  "_saved_at": "2026-11-07T02:21:26+00:00",
   "_url": "https://therightworkshop.com/topics/coe/",
   "_viewport": "desktop",
   "h1_count": 1,
   "has_footer": true,
   "has_nav": true,
-  "images_ok": 24,
-  "images_total": 24,
-  "internal_links": 129,
+  "images_ok": 25,
+  "images_total": 25,
+  "internal_links": 130,
   "layout_defects": [],
   "sections": 4,
   "standards": {
@@ -20,5 +20,5 @@
     "meta_description": true,
     "title": true
   },
-  "text_len": 6225
+  "text_len": 6455
 }

@@ -1,6 +1,6 @@
 {
   "_format": 2,
-  "_saved_at": "2026-11-22T02:29:20+00:00",
+  "_saved_at": "2026-11-23T02:49:11+00:00",
   "_url": "https://therightworkshop.com/erp-rates-rise-at-two-locations-from-4-jan-2027-saturday-orchard-charges-may-ret/",
   "_viewport": "phone",
   "h1_count": 1,
@@ -9,7 +9,9 @@
   "images_ok": 8,
   "images_total": 8,
   "internal_links": 103,
-  "layout_defects": [],
+  "layout_defects": [
+    "tap_target_small|a"
+  ],
   "sections": 6,
   "standards": {
     "address_unit": true,
